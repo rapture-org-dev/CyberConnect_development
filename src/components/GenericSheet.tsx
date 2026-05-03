@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import type { SheetTab, SheetRow, Project, ImportConflict, ImportValidationPreview } from '@/types';
 import { finalizeImportRows } from '@/actions/rows';
 import { useWorkspace } from '@/components/WorkspaceProvider';
@@ -93,6 +93,9 @@ export function GenericSheet({
   const [importSaving, setImportSaving] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
   const [pendingBatchDelete, setPendingBatchDelete] = useState(false);
+  /** Avoid ref-callback DOM writes during React placement (fixes insertBefore errors after bulk row refresh). */
+  const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+
   const displayColumns = tab.columns.flatMap((c) => {
     const jaKey = getBilingualRowFieldKey(tab.id, c.key);
     if (!jaKey) {
@@ -140,6 +143,13 @@ export function GenericSheet({
   const showBatchDelete = canDeleteRow && !!onDeleteRows;
   const allVisibleSelected =
     sortedIds.length > 0 && sortedIds.every((id) => selectedRowIds.has(id));
+
+  useLayoutEffect(() => {
+    const el = selectAllCheckboxRef.current;
+    if (!el) return;
+    el.indeterminate =
+      !allVisibleSelected && sortedIds.some((id) => selectedRowIds.has(id));
+  }, [allVisibleSelected, sortedIds, selectedRowIds]);
 
   const startEdit = (id: string, key: string, value: string) => {
     if (!canEditCell(key)) return;
@@ -225,7 +235,7 @@ export function GenericSheet({
       setImportResults(failedResult);
     } finally {
       setImportSaving(false);
-      setShowImportResults(true);
+      queueMicrotask(() => setShowImportResults(true));
     }
   };
 
@@ -242,7 +252,7 @@ export function GenericSheet({
       }
     } finally {
       setImportSaving(false);
-      setShowImportResults(true);
+      queueMicrotask(() => setShowImportResults(true));
     }
   };
 
@@ -375,11 +385,7 @@ export function GenericSheet({
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
-                    ref={(el) => {
-                      if (el)
-                        el.indeterminate =
-                          !allVisibleSelected && sortedIds.some((id) => selectedRowIds.has(id));
-                    }}
+                    ref={selectAllCheckboxRef}
                     onChange={toggleSelectAllVisible}
                     disabled={pendingBatchDelete || sorted.length === 0}
                     className="rounded border-surface-600 text-brand-500 focus:ring-brand-500/40"

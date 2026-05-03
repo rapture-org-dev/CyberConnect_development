@@ -7,7 +7,7 @@ import { SheetRow, ImportValidationResult, ImportFinalResult, ImportConflict, Co
 import { revalidatePath } from 'next/cache'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { computeNextTaskCode } from '@/lib/taskCodes'
-import { recoverUtf8MisreadAsLatin1 } from '@/lib/importSheet'
+import { recoverUtf8MisreadAsLatin1, stripTextNuls } from '@/lib/importSheet'
 
 /**
  * Server-side actions for managing Sheet Rows across all tables.
@@ -285,6 +285,10 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
     // If a key ends in _id and it's an empty string, it MUST be null or omitted.
     if (key.endsWith('_id') && val === '') {
       val = null;
+    }
+
+    if (typeof val === 'string') {
+      val = stripTextNuls(val)
     }
 
     clean[key] = val

@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx';
 
+/** Postgres `text` columns reject NUL (U+0000). Strip from any imported string. */
+export function stripTextNuls(s: string): string {
+  return s.replace(/\u0000/g, '');
+}
+
 /**
  * Parse an XLSX worksheet into header names and row objects without losing columns.
  * Default `sheet_to_json` drops duplicate header keys (same Excel column name twice)
@@ -56,7 +61,7 @@ function padRow(row: unknown[], width: number): unknown[] {
 
 function normalizeCell(v: unknown): string {
   if (v === null || v === undefined) return '';
-  return String(v).trim();
+  return stripTextNuls(String(v)).trim();
 }
 
 /**
@@ -85,7 +90,7 @@ export function recoverUtf8MisreadAsLatin1(s: string): string {
 
 function normalizeImportedCell(v: unknown): unknown {
   if (v === null || v === undefined) return '';
-  if (typeof v === 'string') return recoverUtf8MisreadAsLatin1(v);
+  if (typeof v === 'string') return stripTextNuls(recoverUtf8MisreadAsLatin1(v));
   return v;
 }
 

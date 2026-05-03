@@ -170,7 +170,10 @@ export function ImportResults({
               </h3>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {successful.map((row, idx) => (
-                  <div key={idx} className="p-2 bg-surface-800 rounded text-xs text-gray-300">
+                  <div
+                    key={typeof row.id === 'string' && row.id ? row.id : `import-ok-${idx}`}
+                    className="p-2 bg-surface-800 rounded text-xs text-gray-300"
+                  >
                     <p className="truncate">
                       Row {idx + 1}: {Object.values(row).slice(0, 3).join(' • ')}
                     </p>
