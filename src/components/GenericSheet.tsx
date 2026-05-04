@@ -3,7 +3,7 @@ import type { SheetTab, SheetRow, Project, ImportConflict, ImportValidationPrevi
 import { finalizeImportRows } from '@/actions/rows';
 import { useWorkspace } from '@/components/WorkspaceProvider';
 import {
-  getProjectDevelopers,
+  getProjectAssignableProfiles,
   getTaskAssigneeProfileIdForProject,
   getUserName,
   translate,
@@ -324,33 +324,33 @@ export function GenericSheet({
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 rounded-xl border border-surface-700 bg-surface-900 px-8 py-6 shadow-xl max-w-sm">
             <Loader2 className="h-8 w-8 animate-spin text-brand-400" />
-            <p className="text-sm text-gray-200 text-center font-medium">
+            <p className="text-base text-gray-200 text-center font-medium">
               {translate('Saving import and updating this sheet…', language)}
             </p>
-            <p className="text-xs text-gray-500 text-center">
+            <p className="text-sm text-gray-500 text-center">
               {translate('This may take a moment for large files.', language)}
             </p>
           </div>
         </div>
       )}
       {sheetMutationError && (
-        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-xs text-red-300 shrink-0">{sheetMutationError}</div>
+        <div className="px-4 py-2.5 bg-red-500/10 border-b border-red-500/20 text-base text-red-300 shrink-0">{sheetMutationError}</div>
       )}
       <div className="px-4 py-2 border-b border-surface-800 flex items-center gap-2 bg-surface-950/50">
         {canAddRow && (
           <>
             <button
               onClick={onAddRow}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-base font-medium transition-all"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-4 h-4" />
               {translate('Add Row', language)}
             </button>
             <button
               onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-800 hover:bg-surface-700 text-gray-300 rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-surface-800 hover:bg-surface-700 text-gray-300 rounded-lg text-base font-medium transition-all"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-4 h-4" />
               Batch Import
             </button>
           </>
@@ -360,28 +360,28 @@ export function GenericSheet({
             type="button"
             onClick={() => void handleBatchDelete()}
             disabled={pendingBatchDelete}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-300 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-300 rounded-lg text-base font-medium transition-all disabled:opacity-50"
           >
             {pendingBatchDelete ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-4 h-4" />
             )}
             {translate('Delete selected', language)} ({selectedRowIds.size})
           </button>
         )}
-        <span className="text-xs text-gray-500">{rows.length} rows</span>
+        <span className="text-base text-gray-500">{rows.length} rows</span>
       </div>
 
       <div className="flex-1 overflow-auto">
         <table className="w-full border-collapse min-w-max">
           <thead className="sticky top-0 z-10">
             <tr className="bg-surface-900 border-b border-surface-700">
-              <th className="w-10 px-3 py-2.5 text-left sticky left-0 bg-surface-900 z-20">
-                <span className="text-gray-500 text-xs">#</span>
+              <th className="w-10 px-3 py-3 text-left sticky left-0 bg-surface-900 z-20">
+                <span className="text-gray-500 text-base">#</span>
               </th>
               {showBatchDelete && (
-                <th className="w-10 px-2 py-2.5 sticky left-10 bg-surface-900 z-20 border-r border-surface-800/80">
+                <th className="w-10 px-2 py-3 sticky left-10 bg-surface-900 z-20 border-r border-surface-800/80">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
@@ -396,28 +396,28 @@ export function GenericSheet({
               {displayColumns.map(c => (
                 <th
                   key={c.displayKey}
-                  className="px-3 py-2.5 text-left cursor-pointer group select-none"
+                  className="px-3 py-3 text-left cursor-pointer group select-none"
                   style={{ minWidth: c.width }}
                   onClick={() => handleSort(c.actualKey)}
                 >
                   <div className="flex items-center gap-1.5">
                     <div className="min-w-0">
-                      <span className="block text-xs font-medium text-gray-300 group-hover:text-white transition-colors">
+                      <span className="block text-base font-medium text-gray-300 group-hover:text-white transition-colors">
                         {getLocalizedColumnLabel(c, language)}
                       </span>
-                      <span className="block text-[10px] text-gray-600">
+                      <span className="block text-sm text-gray-600">
                         {c.langTag ?? ''}
                       </span>
                     </div>
                     {sortKey === c.actualKey && (
                       sortDir === 'asc'
-                        ? <ChevronUp className="w-3.5 h-3.5 text-brand-400" />
-                        : <ChevronDown className="w-3.5 h-3.5 text-brand-400" />
+                        ? <ChevronUp className="w-4 h-4 text-brand-400" />
+                        : <ChevronDown className="w-4 h-4 text-brand-400" />
                     )}
                   </div>
                 </th>
               ))}
-              {canDeleteRow && <th className="w-10 px-3 py-2.5" />}
+              {canDeleteRow && <th className="w-10 px-3 py-3" />}
             </tr>
           </thead>
           <tbody>
@@ -429,12 +429,12 @@ export function GenericSheet({
                 }`}
                 onClick={() => onSelectRow(row)}
               >
-                <td className="px-3 py-2 text-xs text-gray-600 sticky left-0 bg-surface-950/80 backdrop-blur-sm">
+                <td className="px-3 py-3 text-base text-gray-600 sticky left-0 bg-surface-950/80 backdrop-blur-sm">
                   {idx + 1}
                 </td>
                 {showBatchDelete && (
                   <td
-                    className="sticky left-10 z-10 border-r border-surface-800/80 bg-surface-950/80 px-2 py-2 backdrop-blur-sm"
+                    className="sticky left-10 z-10 border-r border-surface-800/80 bg-surface-950/80 px-2 py-3 backdrop-blur-sm"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <input
@@ -475,7 +475,7 @@ export function GenericSheet({
                   return (
                     <td
                       key={c.displayKey}
-                      className={`px-3 py-2 text-sm ${isGuestEditable ? 'bg-amber-500/3' : ''}`}
+                      className={`px-3 py-3 text-base ${isGuestEditable ? 'bg-amber-500/3' : ''}`}
                       style={{ minWidth: c.width }}
                       onDoubleClick={(e) => { e.stopPropagation(); if (editable) startEdit(row.id, c.actualKey, value); }}
                     >
@@ -486,11 +486,11 @@ export function GenericSheet({
                             value={editValue}
                             onChange={e => { setEditValue(e.target.value); }}
                             onBlur={() => void commitEdit()}
-                            className="w-full bg-surface-800 border border-brand-500 rounded px-2 py-1 text-sm text-white focus:outline-none"
+                            className="w-full bg-surface-800 border border-brand-500 rounded px-2 py-1.5 text-base text-white focus:outline-none"
                             onClick={e => e.stopPropagation()}
                           >
                             <option value="">{translate('Unassigned', language)}</option>
-                            {getProjectDevelopers(project).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            {getProjectAssignableProfiles(project).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                           </select>
                         ) : sourceCol.type === 'status' || sourceCol.type === 'select' ? (
                           <select
@@ -498,7 +498,7 @@ export function GenericSheet({
                             value={editValue}
                             onChange={e => { setEditValue(e.target.value); }}
                             onBlur={() => void commitEdit()}
-                            className="w-full bg-surface-800 border border-brand-500 rounded px-2 py-1 text-sm text-white focus:outline-none"
+                            className="w-full bg-surface-800 border border-brand-500 rounded px-2 py-1.5 text-base text-white focus:outline-none"
                             onClick={e => e.stopPropagation()}
                           >
                             {(sourceCol.options ?? []).map(o => <option key={o} value={o}>{translate(o, language)}</option>)}
@@ -510,40 +510,40 @@ export function GenericSheet({
                             onChange={e => setEditValue(e.target.value)}
                             onBlur={() => void commitEdit()}
                             onKeyDown={e => { if (e.key === 'Enter') void commitEdit(); if (e.key === 'Escape') setEditingCell(null); }}
-                            className={`w-full rounded border border-brand-500 bg-surface-800 px-2 py-1 text-sm text-white focus:outline-none ${
+                            className={`w-full rounded border border-brand-500 bg-surface-800 px-2 py-1.5 text-base text-white focus:outline-none ${
                               sourceCol.type === 'code' ? 'font-mono text-brand-300' : ''
                             }`}
                             onClick={e => e.stopPropagation()}
                           />
                         )
                       ) : sourceCol.type === 'code' ? (
-                        <span className="font-mono text-xs bg-surface-800 px-2 py-1 rounded text-brand-300 border border-surface-700 inline-flex items-center gap-1.5">
+                        <span className="font-mono text-base bg-surface-800 px-2.5 py-1 rounded text-brand-300 border border-surface-700 inline-flex items-center gap-1.5">
                           {displayValue}
-                          {isSavingThisCell && <Loader2 className="w-3 h-3 animate-spin text-brand-400 shrink-0" />}
+                          {isSavingThisCell && <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400 shrink-0" />}
                         </span>
                       ) : sourceCol.type === 'status' || sourceCol.type === 'select' ? (
                         value ? (
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full border ${statusColors[value]?.bg ?? 'bg-gray-500/10 border-gray-500/20'} ${statusColors[value]?.text ?? 'text-gray-400'}`}>
+                          <span className={`inline-flex items-center gap-1 text-base font-medium px-2.5 py-1 rounded-full border ${statusColors[value]?.bg ?? 'bg-gray-500/10 border-gray-500/20'} ${statusColors[value]?.text ?? 'text-gray-400'}`}>
                             {translate(value, language)}
                           </span>
                         ) : <span className="text-gray-600">—</span>
                       ) : sourceCol.type === 'assignee' ? (
                         displayValue ? (
-                          <span className="inline-flex items-center gap-1.5 text-sm">
-                            <span className="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center text-[10px] text-white font-medium shrink-0">
+                          <span className="inline-flex items-center gap-2 text-base">
+                            <span className="w-7 h-7 rounded-full bg-brand-600 flex items-center justify-center text-sm text-white font-medium shrink-0">
                               {displayValue.charAt(0)}
                             </span>
                             <span className="text-gray-300">{displayValue}</span>
                           </span>
-                        ) : <span className="text-gray-600 text-xs">{translate('Unassigned', language)}</span>
+                        ) : <span className="text-gray-600 text-base">{translate('Unassigned', language)}</span>
                       ) : sourceCol.type === 'date' ? (
-                        <span className="text-gray-400 text-xs">{displayValue || '—'}</span>
+                        <span className="text-gray-400 text-base">{displayValue || '—'}</span>
                       ) : sourceCol.type === 'number' ? (
-                        <span className="text-gray-300 font-mono text-xs">{displayValue || '—'}</span>
+                        <span className="text-gray-300 font-mono text-base">{displayValue || '—'}</span>
                       ) : sourceCol.type === 'longtext' ? (
-                        <span className="text-gray-300 text-xs leading-relaxed line-clamp-2">{displayValue || <span className="text-gray-600">—</span>}</span>
+                        <span className="text-gray-300 text-base leading-relaxed line-clamp-2">{displayValue || <span className="text-gray-600">—</span>}</span>
                       ) : (
-                        <span className={`text-gray-300 truncate block ${isGuestEditable ? 'cursor-text' : ''}`}>
+                        <span className={`text-gray-300 text-base truncate block ${isGuestEditable ? 'cursor-text' : ''}`}>
                           {displayValue || <span className="text-gray-600">—</span>}
                         </span>
                       )}
@@ -577,10 +577,10 @@ export function GenericSheet({
 
         {sorted.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-            <p className="text-lg font-medium">{translate('No data in this sheet', language)}</p>
+            <p className="text-xl font-medium">{translate('No data in this sheet', language)}</p>
             {canAddRow && (
-              <button onClick={onAddRow} className="mt-4 flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-all">
-                <Plus className="w-4 h-4" />
+              <button onClick={onAddRow} className="mt-4 flex items-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-base font-medium transition-all">
+                <Plus className="w-5 h-5" />
                 {translate('Add First Row', language)}
               </button>
             )}

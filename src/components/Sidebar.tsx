@@ -268,8 +268,8 @@ export function Sidebar({
               <FolderOpen className="w-3.5 h-3.5 text-white" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] text-gray-500">Project</div>
-              <div className="text-xs font-medium text-white truncate">{getLocalizedProjectName(activeProject, language)}</div>
+              <div className="text-sm text-gray-500">Project</div>
+              <div className="text-base font-medium text-white truncate">{getLocalizedProjectName(activeProject, language)}</div>
             </div>
             <ArrowLeft className="w-3.5 h-3.5 text-gray-600 group-hover:text-brand-400 transition-colors" />
           </Link>
@@ -325,17 +325,17 @@ export function Sidebar({
                     <Link
                       key={tab.id}
                       href={`${projectBasePath}/projects/${activeProject.id}/${tab.id}`}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all ${
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-all ${
                         isActive ? 'bg-brand-600/15 text-brand-300' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'
                       }`}
                     >
-                      <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-brand-400' : ''}`} />
+                      <Icon className={`h-6 w-6 shrink-0 ${isActive ? 'text-brand-400' : ''}`} />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-medium">{getLocalizedTabName(tab, language)}</div>
+                        <div className="truncate text-base font-medium leading-snug">{getLocalizedTabName(tab, language)}</div>
                       </div>
                       {count !== null && count > 0 && (
                         <span
-                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          className={`rounded-full px-2 py-0.5 text-sm font-medium ${
                             isActive ? 'bg-brand-500/20 text-brand-300' : 'bg-surface-800 text-gray-500'
                           }`}
                         >
