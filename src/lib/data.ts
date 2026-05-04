@@ -140,10 +140,28 @@ export function getProjectDevelopers(project: Project | null): UserProfile[] {
   return devs;
 }
 
+/** PM, client, devs, and any project_members row — anyone who may appear as task assignee. */
+export function getProjectAssignableProfileIds(project: Project | null): string[] {
+  if (!project) return [];
+  const ids = new Set<string>();
+  if (project.pm_id) ids.add(project.pm_id);
+  if (project.client_id) ids.add(project.client_id);
+  for (const id of project.assignedDevIds ?? []) ids.add(id);
+  for (const m of project.projectMemberEntries ?? []) ids.add(m.profile_id);
+  return [...ids];
+}
+
+export function getProjectAssignableProfiles(project: Project | null): UserProfile[] {
+  const ids = getProjectAssignableProfileIds(project);
+  if (ids.length === 0) return [];
+  const profs = cachedProfiles.filter((u) => ids.includes(u.id));
+  profs.sort((a, b) => a.name.localeCompare(b.name));
+  return profs;
+}
+
 /**
- * Resolves task assignee to a profile id only if that person is a developer on this project.
- * Team projects: restrict to `assignedDevIds`. Personal projects: any stored id is kept.
- * Used so the grid, selects, and DB stay aligned (no "ghost" names for ids outside the dev list).
+ * Resolves task assignee to a profile id when that person is on the project (PM / client / dev / member).
+ * Personal projects: any stored UUID is kept.
  */
 export function getTaskAssigneeProfileIdForProject(row: SheetRow, project: Project | null): string | null {
   const r = row as Record<string, unknown>;
@@ -152,7 +170,7 @@ export function getTaskAssigneeProfileIdForProject(row: SheetRow, project: Proje
     (typeof r.assignee_id === 'string' && r.assignee_id ? r.assignee_id : null);
   if (!raw) return null;
   if (!project || project.workspace_type !== 'team') return raw;
-  const allowed = getProjectDeveloperIds(project);
+  const allowed = getProjectAssignableProfileIds(project);
   return allowed.includes(raw) ? raw : null;
 }
 
