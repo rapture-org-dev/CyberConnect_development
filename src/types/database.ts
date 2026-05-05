@@ -7,7 +7,13 @@ export type WorkspaceRole = 'pm' | 'dev' | 'client' | 'member';
 export type TeamRole = 'admin' | 'member';
 export type WorkspaceType = 'team' | 'personal';
 export type ProjectStatus = 'active' | 'completed' | 'on_hold';
-export type TaskStatus = 'Not started' | 'In progress' | 'Done' | 'Blocked' | 'Need to be checked';
+export type TaskStatus =
+  | 'Not started'
+  | 'In progress'
+  | 'In review'
+  | 'Done'
+  | 'Blocked'
+  | 'Need to be checked';
 
 export interface Team {
   id: string;

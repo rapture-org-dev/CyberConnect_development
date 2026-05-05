@@ -69,7 +69,9 @@ export function AdminDashboardProjectRail({ teamSlug, collapsed, onCollapsedChan
     const tasks = sheetData[projectId]?.['tasks'] ?? [];
     const total = tasks.length;
     const done = tasks.filter(t => t.status === 'Done').length;
-    const inProgress = tasks.filter(t => t.status === 'In progress').length;
+    const inProgress = tasks.filter(
+      t => t.status === 'In progress' || t.status === 'In review'
+    ).length;
     const blocked = tasks.filter(t => t.status === 'Blocked').length;
     const notStarted = tasks.filter(t => t.status === 'Not started').length;
     return { total, done, inProgress, blocked, notStarted };

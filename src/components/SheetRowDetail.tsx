@@ -1,6 +1,6 @@
 import type { SheetTab, SheetRow, Project } from '@/types';
 import {
-  getProjectDevelopers,
+  getProjectAssignableProfiles,
   getTaskAssigneeProfileIdForProject,
   translate,
   getLocalizedCell,
@@ -279,7 +279,7 @@ export function SheetRowDetail({
                     className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                   >
                     <option value="">{translate('Unassigned', language)}</option>
-                    {getProjectDevelopers(project).map(m => (
+                    {getProjectAssignableProfiles(project).map(m => (
                       <option key={m.id} value={m.id}>
                         {m.name}
                       </option>

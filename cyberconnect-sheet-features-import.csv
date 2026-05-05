@@ -1,0 +1,11 @@
+task_code,phase,sprint,epic,epic_ja,screen_code,function_code,task,task_ja,person_day,status,deadline,completed_date,completion_pm,remark,remark_ja
+,MVP,S1,Import & validation,インポート検証,,,"Within-file duplicate codes: first occurrence imports; later rows duplicate_in_file",ファイル内重複コード検出とプレビュー,,Not started,,,,Implemented in validateAndMapImportRows; duplicateCount includes duplicate_in_file.,実装済み
+,MVP,S1,Import & validation,インポート検証,,,"mapUniqueViolationError: friendly messages for idx_function_code_project and idx_screen_code_project",DB一意制約エラーの文言,,Not started,,,,Implemented for function_list and screen_list unique violations.,実装済み
+,MVP,S1,Preview UI,プレビュー,,,"ImportPreview: Ready to import count (rowsToImportCount); duplicate_in_file row styling",プレビューUI,,Not started,,,,ImportPreviewModal shows rows ready vs duplicate_in_file.,実装済み
+,MVP,S1,Column mapping,列マッピング,,,"getImportMappingTargetsForTab: EN columns + JA targets from bilingualRowFieldMap",JA列のマッピング,,Not started,,,,ColumnMappingUI dropdown includes Function (JA) etc.,実装済み
+,MVP,S1,Column mapping,列マッピング,,,"Auto-suggest: underscore headers; JA cues (ja _ja 日本語) map to *_ja fields",自動提案,,Not started,,,,suggestMapping in ColumnMappingUI.,実装済み
+,MVP,S1,Import UX,インポート体験,,,"Full-screen Importing rows overlay during finalizeImportRows (no conflicts path)",インポート中オーバーレイ,,Not started,,,,GenericSheet importFinishing overlay.,実装済み
+,MVP,S1,Import UX,インポート体験,,,"ConflictResolver: dimmed overlay + spinner while batch import runs",競合解決時のローディング,,Not started,,,,ConflictResolver importing overlay.,実装済み
+,MVP,S1,Import UX,インポート体験,,,"Dismissible success/warning banner after Import Results (counts when partial failure)",結果バナー,,Not started,,,,GenericSheet importBanner after Done.,実装済み
+,MVP,S1,Grid language,グリッド表示,,,"Bilingual sheet columns: show only active UI language column (EN or JA)",単一言語列表示,,Not started,,,,GenericSheet displayColumns filtered by language.,実装済み
+,MVP,S1,Batch delete,一括削除,,,"deleteSheetRowsBatchAction + Workspace deleteSheetRows + checkboxes and Delete selected",一括削除UI,,Not started,,,,GenericSheet onDeleteRows; confirm dialog.,実装済み

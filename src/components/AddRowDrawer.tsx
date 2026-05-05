@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import type { SheetTab, SheetRow, Project } from '@/types';
 import { X, Save, Loader2 } from 'lucide-react';
 import {
-  getProjectDevelopers,
+  getProjectAssignableProfiles,
   generateCode,
   getBilingualRowFieldKey,
   getLocalizedColumnLabel,
@@ -159,7 +159,7 @@ export function AddRowDrawer({
           className={`w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${!editable ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <option value="">{translate('Unassigned', language)}</option>
-          {getProjectDevelopers(project).map((m) => (
+          {getProjectAssignableProfiles(project).map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
             </option>

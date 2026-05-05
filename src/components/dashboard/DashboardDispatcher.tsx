@@ -49,7 +49,13 @@ export default function DashboardDispatcher({ activeRole, serverStats }: Props) 
     return {
       total: tasks.length,
       done: tasks.filter(t => t.status === 'Done' || t.status === '完了').length,
-      inProgress: tasks.filter(t => t.status === 'In progress' || t.status === '進行中').length,
+      inProgress: tasks.filter(
+        t =>
+          t.status === 'In progress' ||
+          t.status === '進行中' ||
+          t.status === 'In review' ||
+          t.status === 'レビュー中'
+      ).length,
       notStarted: tasks.filter(t => t.status === 'Not started' || t.status === '未着手').length
     };
   }, [sheetData]);

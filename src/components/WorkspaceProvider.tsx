@@ -1,12 +1,18 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, usePathname, useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { getSession, logoutAction } from '@/actions/auth';
 import { getProfiles, upgradeToAdminAction, getTeamMembersAction, getMyTeamMembershipsAction, getMyProfileAction, updateMyProfileAction } from '@/actions/profiles';
 import { getProjectsAction, createProjectAction, updateProjectAction, deleteProjectAction, getTeamIdBySlugAction } from '@/actions/projects';
-import { getSheetRowsAction, upsertSheetRowAction, deleteSheetRowAction, deleteSheetRowsBatchAction } from '@/actions/rows';
+import {
+  getSheetRowsAction,
+  upsertSheetRowAction,
+  upsertSheetRowsBatchAction,
+  deleteSheetRowAction,
+  deleteSheetRowsBatchAction,
+} from '@/actions/rows';
 import {
   setCachedProfiles,
   sheetTabs,
@@ -75,6 +81,15 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   const [sheetLoadingProjects, setSheetLoadingProjects] = useState<Record<string, boolean>>({});
   const [language, setLanguage] = useState<Language>('en');
   const [selectedAdminProjectId, setSelectedAdminProjectId] = useState<string | null>(null);
+
+  /** Queued cell edits before batched upsert (write-behind). Key: `${projectId}:${tabId}:${rowId}` */
+  const pendingSheetWritesRef = useRef(
+    new Map<string, { projectId: string; tabId: string; row: SheetRow }>()
+  );
+  const sheetFlushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Skip task_rows realtime refetch briefly after our own batched saves (avoid double-fetch). */
+  const ownTaskWriteTimestampsRef = useRef(new Map<string, number>());
+  const pathnameFlushSkipRef = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -319,7 +334,17 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
           const pidFromRow =
             (payload.new as { project_id?: string } | null)?.project_id ??
             (payload.old as { project_id?: string } | null)?.project_id;
-          scheduleRefetch(pidFromRow || pid);
+          const pidRes = pidFromRow || pid;
+          const rid =
+            (payload.new as { id?: string } | null)?.id ??
+            (payload.old as { id?: string } | null)?.id;
+          if (rid) {
+            const t = ownTaskWriteTimestampsRef.current.get(`${pidRes}:${rid}`);
+            if (t !== undefined && Date.now() - t < 2800) {
+              return;
+            }
+          }
+          scheduleRefetch(pidRes);
         }
       );
     }
@@ -486,6 +511,105 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     }));
   }, []);
 
+  const flushPendingSheetWrites = useCallback(async () => {
+    if (sheetFlushTimerRef.current) {
+      clearTimeout(sheetFlushTimerRef.current);
+      sheetFlushTimerRef.current = undefined;
+    }
+
+    const snap = new Map(pendingSheetWritesRef.current);
+    pendingSheetWritesRef.current.clear();
+    if (snap.size === 0) return;
+
+    const groups = new Map<string, { projectId: string; tabId: string; rows: SheetRow[] }>();
+    for (const [, v] of snap) {
+      const gk = `${v.projectId}:${v.tabId}`;
+      const existing = groups.get(gk);
+      if (!existing) {
+        groups.set(gk, { projectId: v.projectId, tabId: v.tabId, rows: [v.row] });
+      } else {
+        const i = existing.rows.findIndex((r) => r.id === v.row.id);
+        if (i >= 0) existing.rows[i] = v.row;
+        else existing.rows.push(v.row);
+      }
+    }
+
+    for (const { projectId, tabId, rows } of groups.values()) {
+      if (tabId === 'tasks') {
+        const cutoff = Date.now() - 120_000;
+        for (const [k, t] of ownTaskWriteTimestampsRef.current) {
+          if (t < cutoff) ownTaskWriteTimestampsRef.current.delete(k);
+        }
+        for (const r of rows) {
+          ownTaskWriteTimestampsRef.current.set(`${projectId}:${r.id}`, Date.now());
+        }
+      }
+
+      try {
+        const saved = await upsertSheetRowsBatchAction(tabId, projectId, rows);
+        setSheetData((prev) => {
+          const tabRows = prev[projectId]?.[tabId] ?? [];
+          const order = tabRows.map((r) => r.id);
+          const byId = new Map(tabRows.map((r) => [r.id, r] as const));
+          for (const s of saved) {
+            byId.set(s.id, s);
+          }
+          const nextList: SheetRow[] = [];
+          for (const id of order) {
+            const r = byId.get(id);
+            if (r) nextList.push(r);
+          }
+          for (const s of saved) {
+            if (!order.includes(s.id)) nextList.push(s);
+          }
+          return {
+            ...prev,
+            [projectId]: {
+              ...prev[projectId],
+              [tabId]: nextList,
+            },
+          };
+        });
+      } catch (e) {
+        console.error('flushPendingSheetWrites:', e);
+        try {
+          await refreshSheetTab(projectId, tabId);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }, [refreshSheetTab]);
+
+  const scheduleSheetFlush = useCallback(() => {
+    if (sheetFlushTimerRef.current) clearTimeout(sheetFlushTimerRef.current);
+    sheetFlushTimerRef.current = setTimeout(() => {
+      sheetFlushTimerRef.current = undefined;
+      void flushPendingSheetWrites();
+    }, 2500);
+  }, [flushPendingSheetWrites]);
+
+  useEffect(() => {
+    if (pathnameFlushSkipRef.current === null) {
+      pathnameFlushSkipRef.current = pathname;
+      return;
+    }
+    if (pathnameFlushSkipRef.current !== pathname) {
+      pathnameFlushSkipRef.current = pathname;
+      void flushPendingSheetWrites();
+    }
+  }, [pathname, flushPendingSheetWrites]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushPendingSheetWrites();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [flushPendingSheetWrites]);
+
   const getProjectById = useCallback((id: string) => {
     return projects.find(p => p.id === id) || null;
   }, [projects]);
@@ -504,44 +628,69 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   }, []);
 
   const updateSheetRow = useCallback(async (projectId: string, tabId: string, rowId: string, key: string, value: string) => {
-    const rows = sheetData[projectId]?.[tabId] ?? [];
-    const row = rows.find(r => r.id === rowId);
-    if (!row) return;
-    const updated = { ...row, [key]: value } as SheetRow & { project_id: string };
-    const saved = await upsertSheetRowAction(tabId, { ...updated, project_id: projectId });
-    setSheetData(prev => ({
-      ...prev,
-      [projectId]: { ...prev[projectId], [tabId]: prev[projectId][tabId].map(r => r.id === rowId ? saved : r) }
-    }));
-  }, [sheetData]);
+    setSheetData((prev) => {
+      const rows = prev[projectId]?.[tabId] ?? [];
+      const row = rows.find((r) => r.id === rowId);
+      if (!row) return prev;
+      const merged = { ...row, [key]: value } as SheetRow;
+      pendingSheetWritesRef.current.set(`${projectId}:${tabId}:${rowId}`, {
+        projectId,
+        tabId,
+        row: merged,
+      });
+      queueMicrotask(() => {
+        scheduleSheetFlush();
+      });
+      return {
+        ...prev,
+        [projectId]: {
+          ...prev[projectId],
+          [tabId]: rows.map((r) => (r.id === rowId ? merged : r)),
+        },
+      };
+    });
+  }, [scheduleSheetFlush]);
 
   const updateSheetRowData = useCallback(async (projectId: string, tabId: string, updatedRow: SheetRow) => {
+    await flushPendingSheetWrites();
     const saved = await upsertSheetRowAction(tabId, { ...updatedRow, project_id: projectId });
-    setSheetData(prev => ({
+    setSheetData((prev) => ({
       ...prev,
-      [projectId]: { ...prev[projectId], [tabId]: (prev[projectId]?.[tabId] ?? []).map(r => r.id === saved.id ? saved : r) }
+      [projectId]: {
+        ...prev[projectId],
+        [tabId]: (prev[projectId]?.[tabId] ?? []).map((r) => (r.id === saved.id ? saved : r)),
+      },
     }));
-  }, []);
+  }, [flushPendingSheetWrites]);
 
   const addSheetRow = useCallback(async (projectId: string, tabId: string, newRow: SheetRow) => {
+    await flushPendingSheetWrites();
     const created = await upsertSheetRowAction(tabId, { ...newRow, project_id: projectId });
-    setSheetData(prev => ({
+    setSheetData((prev) => ({
       ...prev,
-      [projectId]: { ...prev[projectId], [tabId]: [...(prev[projectId]?.[tabId] ?? []), created] }
+      [projectId]: {
+        ...prev[projectId],
+        [tabId]: [...(prev[projectId]?.[tabId] ?? []), created],
+      },
     }));
     return created;
-  }, []);
+  }, [flushPendingSheetWrites]);
 
   const deleteSheetRow = useCallback(async (projectId: string, tabId: string, rowId: string) => {
+    await flushPendingSheetWrites();
     await deleteSheetRowAction(tabId, projectId, rowId);
-    setSheetData(prev => ({
+    setSheetData((prev) => ({
       ...prev,
-      [projectId]: { ...prev[projectId], [tabId]: (prev[projectId]?.[tabId] ?? []).filter(r => r.id !== rowId) }
+      [projectId]: {
+        ...prev[projectId],
+        [tabId]: (prev[projectId]?.[tabId] ?? []).filter((r) => r.id !== rowId),
+      },
     }));
-  }, []);
+  }, [flushPendingSheetWrites]);
 
   const deleteSheetRows = useCallback(async (projectId: string, tabId: string, rowIds: string[]) => {
     if (rowIds.length === 0) return
+    await flushPendingSheetWrites();
     await deleteSheetRowsBatchAction(tabId, projectId, rowIds)
     const idSet = new Set(rowIds)
     setSheetData(prev => ({
@@ -551,7 +700,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
         [tabId]: (prev[projectId]?.[tabId] ?? []).filter(r => !idSet.has(r.id)),
       },
     }))
-  }, [])
+  }, [flushPendingSheetWrites])
 
   const visibleProjects = useMemo(() => {
     if (!loggedInUser) return [];

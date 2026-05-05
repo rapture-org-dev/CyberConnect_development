@@ -1,0 +1,3 @@
+Phase,Sprint,Epic,Medium item,Screen code,Screen name (Auto-filled),Function code,Function name (Auto-filled),Task,Person-day,Assignee,Status,Deadline,Dev Completed date,Completion Check_PM,Remark
+MVP,S1,Admin dashboard,Edit project,,,,,"Backend: Add updateTeamProjectCoreDetailsAction (name name_ja client description); enforce admin/owner/platform admin only; add patchProjectLocal in WorkspaceProvider",1,You,Done,,,Check,"Server action in projects.ts; instant UI merge without double write"
+MVP,S1,Admin dashboard,Edit project,,,,,"UI: EditProjectModal + Edit button on project cards (pencil); toast on save; visible only with canAssignProjectRoles",1,You,Done,,,Check,"AdminView footer Edit Invite Delete row; EditProjectModal matches new-project field layout"

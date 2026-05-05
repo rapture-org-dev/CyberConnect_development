@@ -58,7 +58,7 @@ export async function getGlobalTaskStats(teamId?: string): Promise<GlobalTaskSta
     rows.forEach(row => {
       const s = row.status;
       if (s === 'Done' || s === '完了') stats.done++;
-      else if (s === 'In progress' || s === '進行中') stats.inProgress++;
+      else if (s === 'In progress' || s === '進行中' || s === 'In review' || s === 'レビュー中') stats.inProgress++;
       else if (s === 'Blocked' || s === 'ブロック中') stats.blocked++;
       else if (s === 'Not started' || s === '未着手') stats.notStarted++;
     });
@@ -89,7 +89,7 @@ export async function getGlobalTaskStats(teamId?: string): Promise<GlobalTaskSta
   rows.forEach(row => {
     const s = row.status;
     if (s === 'Done' || s === '完了') stats.done++;
-    else if (s === 'In progress' || s === '進行中') stats.inProgress++;
+    else if (s === 'In progress' || s === '進行中' || s === 'In review' || s === 'レビュー中') stats.inProgress++;
     else if (s === 'Blocked' || s === 'ブロック中') stats.blocked++;
     else if (s === 'Not started' || s === '未着手') stats.notStarted++;
   });

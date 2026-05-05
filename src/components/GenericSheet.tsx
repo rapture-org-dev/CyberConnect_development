@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, type CSSProperties } from 'react';
 import type { SheetTab, SheetRow, Project, ImportConflict, ImportValidationPreview } from '@/types';
 import { finalizeImportRows } from '@/actions/rows';
 import { useWorkspace } from '@/components/WorkspaceProvider';
@@ -40,6 +40,7 @@ interface Props {
 const statusColors: Record<string, { text: string; bg: string }> = {
   'Not started': { text: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' },
   'In progress': { text: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
+  'In review': { text: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/20' },
   'Completed': { text: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
   'Done': { text: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
   'Blocked': { text: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' },
@@ -52,6 +53,9 @@ const statusColors: Record<string, { text: string; bg: string }> = {
   'v2': { text: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
   'v3': { text: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/20' },
 };
+
+/** Beyond this, rows use `content-visibility: auto` so off-screen `<tr>` cost less to lay out (Chromium / Safari). */
+const SHEET_VIRTUAL_ROW_THRESHOLD = 72;
 
 export function GenericSheet({
   tab,
@@ -95,7 +99,6 @@ export function GenericSheet({
   const [pendingBatchDelete, setPendingBatchDelete] = useState(false);
   /** Avoid ref-callback DOM writes during React placement (fixes insertBefore errors after bulk row refresh). */
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
-
   const displayColumns = tab.columns.flatMap((c) => {
     const jaKey = getBilingualRowFieldKey(tab.id, c.key);
     if (!jaKey) {
@@ -424,6 +427,14 @@ export function GenericSheet({
             {sorted.map((row, idx) => (
               <tr
                 key={row.id}
+                style={
+                  sorted.length >= SHEET_VIRTUAL_ROW_THRESHOLD
+                    ? ({
+                        contentVisibility: 'auto',
+                        containIntrinsicSize: '52px',
+                      } satisfies CSSProperties)
+                    : undefined
+                }
                 className={`border-b border-surface-800 hover:bg-surface-900/50 cursor-pointer transition-colors ${
                   selectedRowId === row.id ? 'bg-brand-600/8 border-brand-500/20' : ''
                 }`}

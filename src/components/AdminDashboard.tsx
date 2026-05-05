@@ -44,7 +44,9 @@ export function AdminDashboard({ projects, getSheetData, onSelectProject, onUpda
     const tasks = getSheetData(projectId, 'tasks');
     const total = tasks.length;
     const done = tasks.filter(t => t.status === 'Done').length;
-    const inProgress = tasks.filter(t => t.status === 'In progress').length;
+    const inProgress = tasks.filter(
+      t => t.status === 'In progress' || t.status === 'In review'
+    ).length;
     const blocked = tasks.filter(t => t.status === 'Blocked').length;
     const notStarted = tasks.filter(t => t.status === 'Not started').length;
     return { total, done, inProgress, blocked, notStarted };
@@ -55,7 +57,9 @@ export function AdminDashboard({ projects, getSheetData, onSelectProject, onUpda
   const allTasks = projects.flatMap(p => getSheetData(p.id, 'tasks'));
   const totalTasks = allTasks.length;
   const completedTasks = allTasks.filter(t => t.status === 'Done').length;
-  const inProgressTasks = allTasks.filter(t => t.status === 'In progress').length;
+  const inProgressTasks = allTasks.filter(
+    t => t.status === 'In progress' || t.status === 'In review'
+  ).length;
   const blockedTasks = allTasks.filter(t => t.status === 'Blocked').length;
   const notStartedTasks = allTasks.filter(t => t.status === 'Not started').length;
 

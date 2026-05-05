@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase-server'
 import { getSession } from './auth'
 import { resolveTeamProjectPrivilege, canMutateSheetRows } from '@/lib/team-project-auth'
 import { SheetRow, ImportValidationResult, ImportFinalResult, ImportConflict, ConflictChoice, ImportPreviewRow } from '@/types'
-import { revalidatePath } from 'next/cache'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { computeNextTaskCode } from '@/lib/taskCodes'
 import { recoverUtf8MisreadAsLatin1, stripTextNuls } from '@/lib/importSheet'
@@ -12,6 +11,10 @@ import { recoverUtf8MisreadAsLatin1, stripTextNuls } from '@/lib/importSheet'
 /**
  * Server-side actions for managing Sheet Rows across all tables.
  * Centralizes data cleaning and security checks.
+ *
+ * Sheet row mutations do not call `revalidatePath('/')`: spreadsheet UI keeps authoritative
+ * `sheetData` client-side; broad RSC revalidation added latency and workload unrelated to Postgres.
+ * Call `router.refresh()` only where an SSR shell must update (e.g. admin dashboard sync).
  */
 
 const TABLE_MAP: Record<string, string> = {
@@ -27,8 +30,8 @@ const TABLE_MAP: Record<string, string> = {
   'app_list': 'api_list_rows'
 }
 
-/** Batch size for import finalize — fewer round trips; on failure a chunk falls back to row-by-row. */
-const IMPORT_UPSERT_CHUNK_SIZE = 75
+/** Batch size for import finalize — fewer round trips; on failure the chunk is split (bisect) instead of N sequential upserts. */
+const IMPORT_UPSERT_CHUNK_SIZE = 100
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -303,9 +306,12 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
     }
     // assignee_id is nullable — do not default to current user (that blocked true "Unassigned" saves)
 
-    // Ensure status is never empty
-    if (clean.status === null || clean.status === '') clean.status = 'Not started';
-    
+    if (clean.status !== undefined && clean.status !== null && String(clean.status).trim() !== '') {
+      clean.status = canonicalTaskStatusValue(clean.status)
+    } else {
+      clean.status = 'Not started'
+    }
+
     // PM Check enum: ensure it maps correctly
     if (clean.completion_pm === null || clean.completion_pm === '') clean.completion_pm = ''; 
   }
@@ -359,6 +365,52 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
   }
 
   return clean;
+}
+
+/** Map spreadsheet labels (e.g. Google Sheets `2.In Progress`, `1.ToDo`) to `task_status` enum values. */
+function canonicalTaskStatusValue(val: unknown): string {
+  let raw = stripTextNuls(String(val ?? '')).trim();
+  if (!raw) return 'Not started';
+  raw = recoverUtf8MisreadAsLatin1(raw);
+  raw = raw.replace(/^\d+\.\s*/u, '').trim();
+  raw = raw.replace(/^\d+\s*[.)]\s*/u, '').trim();
+  const collapsed = raw.replace(/\s+/g, ' ');
+  const lower = collapsed.toLowerCase();
+
+  const map: Record<string, string> = {
+    'not started': 'Not started',
+    'in progress': 'In progress',
+    'in review': 'In review',
+    done: 'Done',
+    blocked: 'Blocked',
+    'need to be checked': 'Need to be checked',
+    todo: 'Not started',
+    'to do': 'Not started',
+    'to-do': 'Not started',
+    completed: 'Done',
+    complete: 'Done',
+  };
+  if (map[lower]) return map[lower];
+
+  if (/レビュー中/.test(collapsed)) return 'In review'
+
+  const allowed = new Set([
+    'Not started',
+    'In progress',
+    'In review',
+    'Done',
+    'Blocked',
+    'Need to be checked',
+  ]);
+  if (allowed.has(collapsed)) return collapsed;
+
+  const compact = lower.replace(/[^a-z]/g, '');
+  if (compact === 'inprogress') return 'In progress';
+  if (compact === 'inreview') return 'In review';
+  if (compact === 'notstarted') return 'Not started';
+  if (compact === 'needtobechecked') return 'Need to be checked';
+
+  return 'Not started';
 }
 
 async function verifyProjectAccess(supabase: SupabaseClient, projectId: string) {
@@ -421,19 +473,29 @@ async function assertCanMutateTeamSheets(supabase: SupabaseClient, projectId: st
   if (!canMutateSheetRows(priv)) throw new Error('Forbidden')
 }
 
-/** For team projects, only these profiles may be stored as `task_rows.assignee_id`. */
-async function loadTeamProjectDeveloperIds(
+/** Team projects: PM, client, and all project_members may be task assignees (not only devs). */
+async function loadTeamProjectAssignableProfileIds(
   supabase: SupabaseClient,
   projectId: string
 ): Promise<string[] | null> {
-  const { data: proj } = await supabase.from('projects').select('workspace_type').eq('id', projectId).single();
+  const { data: proj } = await supabase
+    .from('projects')
+    .select('workspace_type, pm_id, client_id')
+    .eq('id', projectId)
+    .single();
   if (!proj || proj.workspace_type !== 'team') return null;
   const { data: members } = await supabase
     .from('project_members')
     .select('profile_id')
-    .eq('project_id', projectId)
-    .eq('workspace_role', 'dev');
-  return (members ?? []).map(m => m.profile_id);
+    .eq('project_id', projectId);
+  const ids = new Set<string>();
+  for (const m of members ?? []) {
+    const id = (m as { profile_id: string }).profile_id;
+    if (id) ids.add(id);
+  }
+  if (proj.pm_id) ids.add(proj.pm_id as string);
+  if (proj.client_id) ids.add(proj.client_id as string);
+  return [...ids];
 }
 
 /**
@@ -531,7 +593,7 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
 
   let payload: Record<string, unknown> = cleanedData
   if (tableName === 'task_rows') {
-    const allowed = await loadTeamProjectDeveloperIds(supabase, row.project_id);
+    const allowed = await loadTeamProjectAssignableProfileIds(supabase, row.project_id);
     if (allowed !== null) {
       const aid = cleanedData.assignee_id;
       if (typeof aid === 'string' && aid && !allowed.includes(aid)) {
@@ -568,11 +630,136 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
     console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
     throw mapUniqueViolationError(tableName, error)
   }
-  
-  revalidatePath('/')
+
   const saved = data as SheetRow
   if (tabId === 'tasks') return shapeTaskRowForClient(saved)
   return saved
+}
+
+/**
+ * Bulk upsert for write-behind / batched sheet saves. Same rules as `upsertSheetRowAction`;
+ * uses chunked upserts with bisect-on-failure like import finalize.
+ */
+export async function upsertSheetRowsBatchAction(
+  tabId: string,
+  projectId: string,
+  rows: (Partial<SheetRow> & { id: string })[]
+): Promise<SheetRow[]> {
+  if (rows.length === 0) return []
+
+  const byId = new Map<string, Partial<SheetRow> & { id: string }>()
+  for (const r of rows) {
+    byId.set(r.id, r)
+  }
+  const deduped = [...byId.values()]
+
+  const tableName = TABLE_MAP[tabId]
+  if (!tableName) throw new Error(`Unknown table for tab: ${tabId}`)
+
+  const session = await getSession()
+  if (!session) throw new Error('Unauthorized')
+
+  const supabase = await createClient()
+  if (!(await verifyProjectAccess(supabase, projectId))) throw new Error('Forbidden')
+  await assertCanMutateTeamSheets(supabase, projectId)
+
+  const assignableProfileIds =
+    tableName === 'task_rows' ? await loadTeamProjectAssignableProfileIds(supabase, projectId) : null
+
+  const ids = deduped.map((r) => r.id).filter(isValidUUID)
+
+  const existingTaskCodeById = new Map<string, string>()
+  if (tableName === 'task_rows' && ids.length > 0) {
+    const { data: existing } = await supabase
+      .from('task_rows')
+      .select('id, task_code')
+      .eq('project_id', projectId)
+      .in('id', ids)
+
+    for (const ex of existing ?? []) {
+      const rec = ex as { id: string; task_code?: string }
+      existingTaskCodeById.set(rec.id, String(rec.task_code ?? '').trim())
+    }
+  }
+
+  let pendingTaskCodes = await fetchTaskCodesForProject(supabase, projectId)
+
+  const payloads: Record<string, unknown>[] = []
+  for (const row of deduped) {
+    const base = { ...row, project_id: projectId } as Record<string, unknown>
+    let cleanedData = sanitizeRowData(base, tableName)
+
+    if (tableName === 'task_rows') {
+      if (assignableProfileIds !== null) {
+        const aid = cleanedData.assignee_id
+        if (typeof aid === 'string' && aid && !assignableProfileIds.includes(aid)) {
+          cleanedData = { ...cleanedData, assignee_id: null }
+        }
+      }
+
+      const p = cleanedData as Record<string, unknown>
+      const tcIn = String(p.task_code ?? '').trim()
+      const existingCode = existingTaskCodeById.get(row.id) ?? ''
+
+      if (!tcIn) {
+        if (existingCode) {
+          p.task_code = existingCode
+        } else {
+          const next = computeNextTaskCode(pendingTaskCodes)
+          pendingTaskCodes = [...pendingTaskCodes, next]
+          p.task_code = next
+        }
+      }
+    }
+
+    payloads.push(cleanedData)
+  }
+
+  const savedRows: SheetRow[] = []
+
+  const upsertChunkOrBisect = async (chunk: Record<string, unknown>[]): Promise<void> => {
+    if (chunk.length === 0) return
+
+    const { data: batchData, error: batchError } = await supabase
+      .from(tableName)
+      .upsert(chunk, { onConflict: 'id' })
+      .select()
+
+    if (!batchError && batchData != null) {
+      const arr = Array.isArray(batchData) ? batchData : [batchData]
+      savedRows.push(...(arr as SheetRow[]))
+      return
+    }
+
+    if (chunk.length === 1) {
+      const cleanedData = chunk[0]
+      const { data, error } = await supabase
+        .from(tableName)
+        .upsert(cleanedData, { onConflict: 'id' })
+        .select()
+        .single()
+
+      if (error) throw mapUniqueViolationError(tableName, error)
+      if (data) savedRows.push(data as SheetRow)
+      return
+    }
+
+    const mid = Math.floor(chunk.length / 2)
+    await upsertChunkOrBisect(chunk.slice(0, mid))
+    await upsertChunkOrBisect(chunk.slice(mid))
+  }
+
+  for (let i = 0; i < payloads.length; i += IMPORT_UPSERT_CHUNK_SIZE) {
+    await upsertChunkOrBisect(payloads.slice(i, i + IMPORT_UPSERT_CHUNK_SIZE))
+  }
+
+  const shaped =
+    tabId === 'tasks'
+      ? shapeTaskRowsForClient(savedRows)
+      : savedRows
+
+  const order = new Map(deduped.map((r, i) => [r.id, i]))
+  return [...shaped].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
 }
 
 export async function deleteSheetRowAction(tabId: string, projectId: string, rowId: string): Promise<void> {
@@ -589,7 +776,6 @@ export async function deleteSheetRowAction(tabId: string, projectId: string, row
     .eq('id', rowId)
 
   if (error) throw error
-  revalidatePath('/')
 }
 
 export async function deleteSheetRowsBatchAction(
@@ -612,7 +798,6 @@ export async function deleteSheetRowsBatchAction(
     .in('id', rowIds)
 
   if (error) throw error
-  revalidatePath('/')
 }
 
 export type ValidateImportRowsOptions = {
@@ -814,9 +999,9 @@ export async function finalizeImportRows(
 
   let pendingTaskCodes = existingRowsArray.map((r) => String(r.task_code ?? ''))
 
-  const allowedDevIds =
+  const assignableProfileIds =
     tableName === 'task_rows'
-      ? await loadTeamProjectDeveloperIds(supabase, projectId)
+      ? await loadTeamProjectAssignableProfileIds(supabase, projectId)
       : null
 
   /** Rows prepared in order (sanitize + codes); claimedCodes updated per row like single-row import. */
@@ -871,9 +1056,9 @@ export async function finalizeImportRows(
           continue
         }
 
-        if (tableName === 'task_rows' && allowedDevIds !== null) {
+        if (tableName === 'task_rows' && assignableProfileIds !== null) {
           const aid = cleanedData.assignee_id
-          if (typeof aid === 'string' && aid && !allowedDevIds.includes(aid)) {
+          if (typeof aid === 'string' && aid && !assignableProfileIds.includes(aid)) {
             cleanedData = { ...cleanedData, assignee_id: null }
           }
         }
@@ -918,9 +1103,9 @@ export async function finalizeImportRows(
           rewriteCodeIfClaimed(tableName, cleanedData, claimedCodes)
         }
 
-        if (tableName === 'task_rows' && allowedDevIds !== null) {
+        if (tableName === 'task_rows' && assignableProfileIds !== null) {
           const aid = cleanedData.assignee_id
-          if (typeof aid === 'string' && aid && !allowedDevIds.includes(aid)) {
+          if (typeof aid === 'string' && aid && !assignableProfileIds.includes(aid)) {
             cleanedData.assignee_id = null
           }
         }
@@ -936,11 +1121,29 @@ export async function finalizeImportRows(
     }
   }
 
-  const upsertRowsOneByOne = async (chunk: Record<string, unknown>[]) => {
-    for (const cleanedData of chunk) {
+  /**
+   * Upsert rows in bulk; if the batch fails (any row error, size/timeout, etc.), split the chunk
+   * instead of issuing one HTTP round trip per row — that path could take many minutes on large imports.
+   */
+  const upsertChunkOrBisect = async (chunk: Record<string, unknown>[]): Promise<void> => {
+    if (chunk.length === 0) return
+
+    const { data: batchData, error: batchError } = await supabase
+      .from(tableName)
+      .upsert(chunk, { onConflict: 'id' })
+      .select()
+
+    if (!batchError && batchData != null) {
+      const rows = Array.isArray(batchData) ? batchData : [batchData]
+      successful.push(...(rows as SheetRow[]))
+      return
+    }
+
+    if (chunk.length === 1) {
+      const cleanedData = chunk[0]
       const { data, error } = await supabase
         .from(tableName)
-        .upsert(cleanedData)
+        .upsert(cleanedData, { onConflict: 'id' })
         .select()
         .single()
 
@@ -953,47 +1156,20 @@ export async function finalizeImportRows(
       } else if (data) {
         successful.push(data as SheetRow)
       }
+      return
     }
+
+    const mid = Math.floor(chunk.length / 2)
+    await upsertChunkOrBisect(chunk.slice(0, mid))
+    await upsertChunkOrBisect(chunk.slice(mid))
   }
 
   for (let i = 0; i < preparedPayloads.length; i += IMPORT_UPSERT_CHUNK_SIZE) {
-    const chunk = preparedPayloads.slice(i, i + IMPORT_UPSERT_CHUNK_SIZE)
-    const { data: batchData, error: batchError } = await supabase
-      .from(tableName)
-      .upsert(chunk)
-      .select()
-
-    if (!batchError && batchData) {
-      const rows = Array.isArray(batchData) ? batchData : [batchData]
-      successful.push(...(rows as SheetRow[]))
-      continue
-    }
-
-    await upsertRowsOneByOne(chunk)
+    await upsertChunkOrBisect(preparedPayloads.slice(i, i + IMPORT_UPSERT_CHUNK_SIZE))
   }
 
-  // Process conflict resolutions
-  for (const resolution of conflictResolutions) {
-    const decision = resolution.decision
-    
-    // Only 'overwrite' requires importing
-    if (decision === 'overwrite') {
-      try {
-        // Find the row that should be imported
-        // This is handled in the UI - rowsToImport should contain resolved rows
-        // For now, mark as processed
-      } catch (err: any) {
-        failed.push({
-          rowData: {},
-          reason: `Conflict resolution failed: ${err.message}`,
-        })
-      }
-    }
-    // 'skip' does nothing
-    // 'use_new' is also handled by including the row in rowsToImport
-  }
+  // conflictResolutions: ConflictResolver already merges overwrite/use_new rows into `rowsToImport` above.
 
-  revalidatePath('/')
   return {
     successful,
     failed,

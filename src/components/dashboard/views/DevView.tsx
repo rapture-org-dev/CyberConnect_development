@@ -45,7 +45,13 @@ export function DevView({ projects, sheetData, onSelectProject, language, onLang
   const stats = {
     total: myAssignedTasks.length,
     done: myAssignedTasks.filter(t => t.status === 'Done' || t.status === '完了').length,
-    inProgress: myAssignedTasks.filter(t => t.status === 'In progress' || t.status === '進行中').length,
+    inProgress: myAssignedTasks.filter(
+      t =>
+        t.status === 'In progress' ||
+        t.status === '進行中' ||
+        t.status === 'In review' ||
+        t.status === 'レビュー中'
+    ).length,
     blocked: myAssignedTasks.filter(t => t.status === 'Blocked' || t.status === 'ブロック').length,
   };
 

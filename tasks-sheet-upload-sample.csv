@@ -1,0 +1,4 @@
+a,Phase,Sprint,Epic,Medium item,Screen code,Screen name(Auto-filled),Function code,Function name(Auto-filled),Task,Person-day,Assignee,Status,Deadline,Dev Completed date,Completion Check_PM,Remark
+1,MVP,Sprint 1,Authentication,Login flow,SCR-001,Log in,FNC-001,User login,Implement login API and session validation,2,,Not started,2026-05-15,,,Sample task — map columns in Map Columns step
+2,MVP,Sprint 1,Dashboard,Widgets,SCR-002,My Dashboard,FNC-010,Dashboard load,Wire dashboard metrics cards and empty states,1.5,,In progress,2026-05-20,,Check,Assignee must be a developer UUID on team projects or leave blank
+3,MVP,Sprint 2,Checkout,Payment,SCR-050,Checkout,FNC-055,Pay now,Add error handling for payment timeout and retries,3,,Need to be checked,2026-06-01,,,Use status values exactly: Not started | In progress | In review | Done | Blocked | Need to be checked

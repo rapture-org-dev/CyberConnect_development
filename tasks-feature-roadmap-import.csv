@@ -1,0 +1,9 @@
+task_code,phase,sprint,epic,screen_code,function_code,task,person_day,assignee,status,deadline,completed_date,completion_pm,remark
+,MVP,Sprint 1,Import / Excel,,,"Add worksheet picker after uploading .xlsx — list workbook.SheetNames; parse only the selected sheet (EN tab vs JP tab) instead of always using SheetNames[0]",1,,Not started,,,,"Part of bilingual template workflow; same mapping UI as today."
+,MVP,Sprint 1,Import / Excel,,,"Optional: show sheet preview row count per tab before mapping so users confirm EN vs JP",0.5,,Not started,,,,
+,MVP,Sprint 1,Import / i18n,,,"Document two-step import for JP then EN: first upload primary sheet (merge off); second upload with Merge into existing by code + map only supplement columns",0.25,,Not started,,,,"Applies to Tasks / Function list / Screen list; task_code must match between files."
+,MVP,Sprint 2,Integrations,,,"Add POST webhook route (e.g. /api/webhooks/sheet-sync) with shared-secret header; validate body and update target project row/cell in Supabase",1.5,,Not started,,,,"For Google Apps Script UrlFetchApp from a bound Google Sheet."
+,MVP,Sprint 2,Integrations,,,"Define JSON payload contract (project_id, tab/field key, business code or row id, value) and map to sanitizeRowData update path",1,,Not started,,,,
+,MVP,Sprint 2,Integrations,,,"Provide sample Google Apps Script snippet (onEdit or menu) calling the webhook with Script Properties for URL + secret",0.5,,Not started,,,,"Sheet stays on Google Drive; local .xlsx uses a different path."
+,MVP,Sprint 1,Import / QA,,,"Regression: CSV UTF-8 import — confirm Shift-JIS CSV saved as UTF-8 or use xlsx to avoid mojibake for Japanese headers",0.25,,Not started,,,,"Already noted in internal task log; keep as checklist item."
+,MVP,Sprint 1,Import / UX,,,"Verify merge preview shows merge vs no_match counts when supplementing *_ja fields after English row creation",0.25,,Not started,,,,
