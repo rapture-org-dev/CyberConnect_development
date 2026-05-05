@@ -44,6 +44,16 @@ export function ConflictResolver({
     }));
   };
 
+  const applyAllResolutions = (decision: 'skip' | 'overwrite' | 'use_new') => {
+    setResolutions((prev) => {
+      const next = { ...prev };
+      for (const c of conflicts) {
+        next[c.excelRowIndex] = decision;
+      }
+      return next;
+    });
+  };
+
   const handleContinueImport = async () => {
     setImporting(true);
     setError('');
@@ -124,6 +134,40 @@ export function ConflictResolver({
           {error && (
             <div className="p-3 mb-4 bg-red-500/10 border border-red-500/30 rounded-lg">
               <p className="text-sm text-red-400">{error}</p>
+            </div>
+          )}
+
+          {conflicts.length > 1 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-surface-700 bg-surface-800/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-gray-400">
+                {translate('Apply to all conflicts', language)}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyAllResolutions('skip')}
+                  disabled={importing}
+                  className="rounded-lg bg-surface-700 px-3 py-2 text-xs font-medium text-gray-200 transition-colors hover:bg-gray-600 disabled:opacity-50"
+                >
+                  {translate('Skip all', language)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyAllResolutions('overwrite')}
+                  disabled={importing}
+                  className="rounded-lg bg-amber-600/90 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
+                >
+                  {translate('Overwrite all', language)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyAllResolutions('use_new')}
+                  disabled={importing}
+                  className="rounded-lg bg-emerald-600/90 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {translate('Use new for all', language)}
+                </button>
+              </div>
             </div>
           )}
 
