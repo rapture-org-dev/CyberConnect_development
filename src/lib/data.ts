@@ -508,7 +508,7 @@ export const sheetTabs: SheetTab[] = [
     icon: 'Monitor',
     visibleTo: ['admin', 'pm', 'dev', 'client'],
     columns: [
-      col('screen_code', 'Code', '画面ID', 100, 'code', false),
+      col('screen_code', 'Code', '画面ID', 120, 'code', false),
       col('user_category', 'User', 'ユーザー', 120, 'text', true),
       col('major_item', 'Major', '大項目', 120, 'text', true),
       col('medium_item', 'Medium', '中項目', 120, 'text', true),
@@ -530,7 +530,7 @@ export const sheetTabs: SheetTab[] = [
     icon: 'Puzzle',
     visibleTo: ['admin', 'pm', 'dev', 'client'],
     columns: [
-      col('function_code', 'Code', '機能ID', 100, 'code', false),
+      col('function_code', 'Code', '機能ID', 120, 'code', false),
       col('phase', 'Phase', 'フェーズ', 100, 'select', true, ['MVP', 'v2', 'v3', 'actual_performance']),
       col('user_category', 'User', 'ユーザー', 120, 'text', true),
       col('main_category', 'Main', '大項目', 140, 'text', true),
@@ -555,7 +555,7 @@ export const sheetTabs: SheetTab[] = [
     icon: 'CheckSquare',
     visibleTo: ['admin', 'pm', 'dev', 'client'],
     columns: [
-      col('task_code', 'Code', 'タスクID', 100, 'code', true),
+      col('task_code', 'Code', 'タスクID', 120, 'code', true),
       col('phase', 'Phase', 'フェーズ', 100, 'select', true, ['MVP', 'v2', 'v3', 'actual_performance']),
       col('sprint', 'Sprint', 'スプリント', 100, 'text', true),
       col('epic', 'Epic', 'エピック', 140, 'text', true),

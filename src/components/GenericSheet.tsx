@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useLayoutEffect, type CSSProperties } from 'react';
-import type { SheetTab, SheetRow, Project, ImportConflict, ImportValidationPreview } from '@/types';
+import { useState, useEffect, useRef, useLayoutEffect, useMemo, type CSSProperties } from 'react';
+import type { SheetTab, SheetColumn, SheetRow, Project, ImportConflict, ImportValidationPreview } from '@/types';
 import { finalizeImportRows } from '@/actions/rows';
 import { useWorkspace } from '@/components/WorkspaceProvider';
 import {
@@ -56,6 +56,57 @@ const statusColors: Record<string, { text: string; bg: string }> = {
 
 /** Beyond this, rows use `content-visibility: auto` so off-screen `<tr>` cost less to lay out (Chromium / Safari). */
 const SHEET_VIRTUAL_ROW_THRESHOLD = 72;
+
+/**
+ * Frozen row-index + checkbox columns: width of `#` must match Tailwind `left-*` on the checkbox column
+ * (e.g. w-14 + left-14). Mismatches caused sticky checkbox cells to drift over the next data column.
+ */
+const SHEET_ROW_INDEX_CELL =
+  'sticky left-0 z-30 w-14 min-w-[3.5rem] max-w-[3.5rem] shrink-0 box-border px-2';
+const SHEET_CHECKBOX_CELL =
+  'sticky left-14 z-30 w-12 min-w-[3rem] max-w-[3rem] shrink-0 box-border px-0 align-middle border-r border-surface-800/80';
+
+/** Pixel widths matching frozen columns (w-14 / w-12) for table `min-width` math. */
+const SHEET_ROW_INDEX_PX = 56;
+const SHEET_CHECKBOX_COL_PX = 48;
+const SHEET_DELETE_COL_PX = 40;
+
+/** Minimum width for `code` columns so IDs like TSK-106 stay on one line (see sheetDataColumnStyle). */
+const SHEET_CODE_COL_MIN_PX = 120;
+
+function sheetCodeLayoutWidthPx(declaredWidth: number): number {
+  return Math.max(declaredWidth, SHEET_CODE_COL_MIN_PX);
+}
+
+/** Spreadsheet-style wrapping: fixed column width so text breaks within the cell instead of one endless line. */
+function sheetDataColumnStyle(px: number, colType?: SheetColumn['type']): CSSProperties {
+  if (colType === 'code') {
+    const w = sheetCodeLayoutWidthPx(px);
+    return {
+      width: w,
+      minWidth: w,
+      maxWidth: w,
+      wordBreak: 'normal',
+      overflowWrap: 'normal',
+      whiteSpace: 'nowrap',
+      overflowX: 'auto',
+    };
+  }
+  return {
+    width: px,
+    minWidth: px,
+    maxWidth: px,
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere',
+  };
+}
+
+/** Match checkbox column: short fields vertically centered; paragraph-style columns stay top-aligned for readability. */
+function sheetDataCellVerticalAlign(type: SheetColumn['type'], widthPx: number): string {
+  if (type === 'longtext') return 'align-top';
+  if (type === 'text' && widthPx >= 200) return 'align-top';
+  return 'align-middle';
+}
 
 export function GenericSheet({
   tab,
@@ -144,6 +195,17 @@ export function GenericSheet({
   const canAddRow = tab.pmCanAddRows && (pm || (tasks && projectSheetRole === 'dev'));
   const canDeleteRow = pm || (tasks && projectSheetRole === 'dev');
   const showBatchDelete = canDeleteRow && !!onDeleteRows;
+
+  const sheetTableMinWidthPx = useMemo(() => {
+    let w = SHEET_ROW_INDEX_PX + (showBatchDelete ? SHEET_CHECKBOX_COL_PX : 0);
+    w += displayColumns.reduce(
+      (sum, c) => sum + (c.type === 'code' ? sheetCodeLayoutWidthPx(c.width) : c.width),
+      0
+    );
+    if (canDeleteRow) w += SHEET_DELETE_COL_PX;
+    return w;
+  }, [displayColumns, showBatchDelete, canDeleteRow]);
+
   const allVisibleSelected =
     sortedIds.length > 0 && sortedIds.every((id) => selectedRowIds.has(id));
 
@@ -377,35 +439,47 @@ export function GenericSheet({
       </div>
 
       <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse min-w-max">
+        <table
+          className="border-collapse"
+          style={{
+            tableLayout: 'fixed',
+            width: sheetTableMinWidthPx,
+          }}
+        >
           <thead className="sticky top-0 z-10">
             <tr className="bg-surface-900 border-b border-surface-700">
-              <th className="w-10 px-3 py-3 text-left sticky left-0 bg-surface-900 z-20">
+              <th
+                className={`${SHEET_ROW_INDEX_CELL} py-3 text-center bg-surface-900`}
+              >
                 <span className="text-gray-500 text-base">#</span>
               </th>
               {showBatchDelete && (
-                <th className="w-10 px-2 py-3 sticky left-10 bg-surface-900 z-20 border-r border-surface-800/80">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    ref={selectAllCheckboxRef}
-                    onChange={toggleSelectAllVisible}
-                    disabled={pendingBatchDelete || sorted.length === 0}
-                    className="rounded border-surface-600 text-brand-500 focus:ring-brand-500/40"
-                    title={language === 'ja' ? '表示中の行をすべて選択' : 'Select all visible rows'}
-                  />
+                <th className={`${SHEET_CHECKBOX_CELL} bg-surface-900 py-3`}>
+                  <div className="flex h-full w-full items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={selectAllCheckboxRef}
+                      onChange={toggleSelectAllVisible}
+                      disabled={pendingBatchDelete || sorted.length === 0}
+                      className="rounded border-surface-600 text-brand-500 focus:ring-brand-500/40"
+                      title={language === 'ja' ? '表示中の行をすべて選択' : 'Select all visible rows'}
+                    />
+                  </div>
                 </th>
               )}
-              {displayColumns.map(c => (
+              {displayColumns.map(c => {
+                const sourceColForHead = tab.columns.find((col) => col.key === c.sourceKey) ?? c;
+                return (
                 <th
                   key={c.displayKey}
-                  className="px-3 py-3 text-left cursor-pointer group select-none"
-                  style={{ minWidth: c.width }}
+                  className={`px-3 py-3 text-left cursor-pointer group select-none ${sheetDataCellVerticalAlign(sourceColForHead.type, c.width)}`}
+                  style={sheetDataColumnStyle(c.width, sourceColForHead.type)}
                   onClick={() => handleSort(c.actualKey)}
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <div className="min-w-0">
-                      <span className="block text-base font-medium text-gray-300 group-hover:text-white transition-colors">
+                      <span className="block break-words text-base font-medium text-gray-300 group-hover:text-white transition-colors">
                         {getLocalizedColumnLabel(c, language)}
                       </span>
                       <span className="block text-sm text-gray-600">
@@ -419,8 +493,14 @@ export function GenericSheet({
                     )}
                   </div>
                 </th>
-              ))}
-              {canDeleteRow && <th className="w-10 px-3 py-3" />}
+                );
+              })}
+              {canDeleteRow && (
+                <th
+                  className="px-2 py-3 align-middle"
+                  style={{ width: SHEET_DELETE_COL_PX, minWidth: SHEET_DELETE_COL_PX, maxWidth: SHEET_DELETE_COL_PX }}
+                />
+              )}
             </tr>
           </thead>
           <tbody>
@@ -431,31 +511,43 @@ export function GenericSheet({
                   sorted.length >= SHEET_VIRTUAL_ROW_THRESHOLD
                     ? ({
                         contentVisibility: 'auto',
-                        containIntrinsicSize: '52px',
+                        containIntrinsicSize: '96px',
                       } satisfies CSSProperties)
                     : undefined
                 }
-                className={`border-b border-surface-800 hover:bg-surface-900/50 cursor-pointer transition-colors ${
+                className={`group border-b border-surface-800 hover:bg-surface-900/50 cursor-pointer transition-colors ${
                   selectedRowId === row.id ? 'bg-brand-600/8 border-brand-500/20' : ''
                 }`}
                 onClick={() => onSelectRow(row)}
               >
-                <td className="px-3 py-3 text-base text-gray-600 sticky left-0 bg-surface-950/80 backdrop-blur-sm">
+                <td
+                  className={`${SHEET_ROW_INDEX_CELL} align-middle py-3 text-base text-gray-600 backdrop-blur-sm ${
+                    selectedRowId === row.id
+                      ? 'bg-brand-600/12'
+                      : 'bg-surface-950/80 group-hover:bg-surface-900/60'
+                  }`}
+                >
                   {idx + 1}
                 </td>
                 {showBatchDelete && (
                   <td
-                    className="sticky left-10 z-10 border-r border-surface-800/80 bg-surface-950/80 px-2 py-3 backdrop-blur-sm"
+                    className={`${SHEET_CHECKBOX_CELL} py-3 backdrop-blur-sm ${
+                      selectedRowId === row.id
+                        ? 'bg-brand-600/12'
+                        : 'bg-surface-950/80 group-hover:bg-surface-900/60'
+                    }`}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedRowIds.has(row.id)}
-                      onChange={() => toggleRowSelected(row.id)}
-                      disabled={pendingBatchDelete}
-                      className="rounded border-surface-600 text-brand-500 focus:ring-brand-500/40"
-                      aria-label={language === 'ja' ? '行を選択' : 'Select row'}
-                    />
+                    <div className="flex w-full items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedRowIds.has(row.id)}
+                        onChange={() => toggleRowSelected(row.id)}
+                        disabled={pendingBatchDelete}
+                        className="rounded border-surface-600 text-brand-500 focus:ring-brand-500/40"
+                        aria-label={language === 'ja' ? '行を選択' : 'Select row'}
+                      />
+                    </div>
                   </td>
                 )}
                 {displayColumns.map(c => {
@@ -486,8 +578,8 @@ export function GenericSheet({
                   return (
                     <td
                       key={c.displayKey}
-                      className={`px-3 py-3 text-base ${isGuestEditable ? 'bg-amber-500/3' : ''}`}
-                      style={{ minWidth: c.width }}
+                      className={`${sheetDataCellVerticalAlign(sourceCol.type, c.width)} px-3 py-3 text-base ${isGuestEditable ? 'bg-amber-500/3' : ''}`}
+                      style={sheetDataColumnStyle(c.width, sourceCol.type)}
                       onDoubleClick={(e) => { e.stopPropagation(); if (editable) startEdit(row.id, c.actualKey, value); }}
                     >
                       {isEditing ? (
@@ -528,23 +620,25 @@ export function GenericSheet({
                           />
                         )
                       ) : sourceCol.type === 'code' ? (
-                        <span className="font-mono text-base bg-surface-800 px-2.5 py-1 rounded text-brand-300 border border-surface-700 inline-flex items-center gap-1.5">
+                        <span className="inline-flex max-w-none items-center gap-1.5 whitespace-nowrap rounded border border-surface-700 bg-surface-800 px-2.5 py-1 font-mono text-base text-brand-300">
                           {displayValue}
-                          {isSavingThisCell && <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400 shrink-0" />}
+                          {isSavingThisCell && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-brand-400" />}
                         </span>
                       ) : sourceCol.type === 'status' || sourceCol.type === 'select' ? (
                         value ? (
-                          <span className={`inline-flex items-center gap-1 text-base font-medium px-2.5 py-1 rounded-full border ${statusColors[value]?.bg ?? 'bg-gray-500/10 border-gray-500/20'} ${statusColors[value]?.text ?? 'text-gray-400'}`}>
+                          <span
+                            className={`inline-flex max-w-full flex-wrap items-center gap-1 whitespace-normal break-words text-base font-medium px-2.5 py-1 rounded-full border ${statusColors[value]?.bg ?? 'bg-gray-500/10 border-gray-500/20'} ${statusColors[value]?.text ?? 'text-gray-400'}`}
+                          >
                             {translate(value, language)}
                           </span>
                         ) : <span className="text-gray-600">—</span>
                       ) : sourceCol.type === 'assignee' ? (
                         displayValue ? (
-                          <span className="inline-flex items-center gap-2 text-base">
-                            <span className="w-7 h-7 rounded-full bg-brand-600 flex items-center justify-center text-sm text-white font-medium shrink-0">
+                          <span className="inline-flex min-w-0 max-w-full items-center gap-2 text-base">
+                            <span className="w-7 h-7 shrink-0 rounded-full bg-brand-600 flex items-center justify-center text-sm text-white font-medium">
                               {displayValue.charAt(0)}
                             </span>
-                            <span className="text-gray-300">{displayValue}</span>
+                            <span className="min-w-0 break-words text-gray-300">{displayValue}</span>
                           </span>
                         ) : <span className="text-gray-600 text-base">{translate('Unassigned', language)}</span>
                       ) : sourceCol.type === 'date' ? (
@@ -552,9 +646,13 @@ export function GenericSheet({
                       ) : sourceCol.type === 'number' ? (
                         <span className="text-gray-300 font-mono text-base">{displayValue || '—'}</span>
                       ) : sourceCol.type === 'longtext' ? (
-                        <span className="text-gray-300 text-base leading-relaxed line-clamp-2">{displayValue || <span className="text-gray-600">—</span>}</span>
+                        <span className="block whitespace-normal break-words text-gray-300 text-base leading-relaxed">
+                          {displayValue || <span className="text-gray-600">—</span>}
+                        </span>
                       ) : (
-                        <span className={`text-gray-300 text-base truncate block ${isGuestEditable ? 'cursor-text' : ''}`}>
+                        <span
+                          className={`block whitespace-normal break-words text-gray-300 text-base ${isGuestEditable ? 'cursor-text' : ''}`}
+                        >
                           {displayValue || <span className="text-gray-600">—</span>}
                         </span>
                       )}
@@ -562,7 +660,10 @@ export function GenericSheet({
                   );
                 })}
                 {canDeleteRow && (
-                  <td className="px-3 py-2">
+                  <td
+                    className="align-middle px-2 py-2"
+                    style={{ width: SHEET_DELETE_COL_PX, minWidth: SHEET_DELETE_COL_PX, maxWidth: SHEET_DELETE_COL_PX }}
+                  >
                     <button
                       type="button"
                       onClick={(e) => {
