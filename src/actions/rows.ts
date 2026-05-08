@@ -264,15 +264,16 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
 
     // 6. Handle NOT NULL Text Columns (must be at least empty string, never null)
     const notNullTextFields = [
-      'remark', 'remarks', 'remark_ja', 'remarks_ja', 'completion_pm', 'status', 'effort', 
+      'remark', 'remarks', 'remark_ja', 'remarks_ja', 'completion_pm', 'status', 'effort', 'effort_ja',
       'epic', 'epic_ja', 'story', 'story_ja', 'task', 'task_ja', 'scenario_name', 'scenario_name_ja',
-      'test_type', 'summary', 'summary_ja', 'test_steps', 'test_steps_ja', 'expected_results', 
+      'test_type', 'test_type_ja', 'summary', 'summary_ja', 'test_steps', 'test_steps_ja', 'expected_results',
       'expected_results_ja', 'tester', 'category', 'category_ja', 'service_name', 'service_name_ja',
       'api_name', 'api_name_ja', 'auth_method', 'auth_method_ja', 'data_handling', 'data_handling_ja',
-      'screen_name', 'screen_name_ja', 'screen_code', 'function_name', 'function_name_ja', 
+      'screen_name', 'screen_name_ja', 'screen_code', 'function_name', 'function_name_ja',
       'function_code', 'function_details', 'function_details_ja', 'main_category', 'main_category_ja',
-      'subcategory', 'subcategory_ja', 'user_category', 'user_category_ja', 'task_code', 'sprint', 'code',
-      'major_item', 'content', 'details'
+      'subcategory', 'subcategory_ja', 'user_category', 'user_category_ja', 'task_code', 'sprint', 'sprint_ja',
+      'code', 'phase_ja', 'path', 'path_ja', 'medium_item', 'medium_item_ja', 'overview', 'overview_ja',
+      'major_item', 'major_item_ja', 'content', 'content_ja', 'details', 'details_ja'
     ];
     if (notNullTextFields.includes(key)) {
       val = (val === null || val === undefined) ? '' : String(val)

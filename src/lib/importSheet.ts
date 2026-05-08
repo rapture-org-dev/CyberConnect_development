@@ -1,8 +1,58 @@
+import Encoding from 'encoding-japanese';
 import * as XLSX from 'xlsx';
 
 /** Postgres `text` columns reject NUL (U+0000). Strip from any imported string. */
 export function stripTextNuls(s: string): string {
   return s.replace(/\u0000/g, '');
+}
+
+/**
+ * Decode CSV bytes for import. Tries strict UTF-8 first (Google Sheets, exports with BOM),
+ * then Shift_JIS / EUC-JP / ISO-2022-JP — Excel on Japanese Windows often saves CSV as Shift_JIS,
+ * which becomes Unicode replacement characters in columns when misread as UTF-8.
+ */
+export function decodeCsvFileText(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length === 0) return '';
+
+  const hasUtf8Bom =
+    bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+  const utf8Payload = hasUtf8Bom ? bytes.subarray(3) : bytes;
+
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(utf8Payload);
+    return stripBom(text);
+  } catch {
+    /* not valid UTF-8 */
+  }
+
+  const detected = Encoding.detect(bytes);
+  const order: Array<'SJIS' | 'EUCJP' | 'JIS'> =
+    detected === 'SJIS' || detected === 'EUCJP' || detected === 'JIS'
+      ? [detected, ...(['SJIS', 'EUCJP', 'JIS'] as const).filter((e) => e !== detected)]
+      : ['SJIS', 'EUCJP', 'JIS'];
+
+  let best: string | null = null;
+  let bestRepl = Infinity;
+  for (const from of order) {
+    const s = Encoding.convert(bytes, { to: 'UNICODE', from, type: 'string' });
+    const repl = (s.match(/\uFFFD/g) || []).length;
+    if (repl < bestRepl) {
+      bestRepl = repl;
+      best = s;
+      if (repl === 0) break;
+    }
+  }
+
+  if (best != null) {
+    return stripBom(best);
+  }
+
+  return stripBom(new TextDecoder('utf-8', { fatal: false }).decode(bytes));
+}
+
+function stripBom(s: string): string {
+  return s.replace(/^\ufeff/, '');
 }
 
 /**
@@ -65,23 +115,32 @@ function normalizeCell(v: unknown): string {
 }
 
 /**
- * When UTF-8 text was interpreted as Latin-1/Windows-1252 (common CSV export issue),
- * recover the original string (e.g. mojibake "ä¿®æ­£ä¸" -> "修正中").
+ * When UTF-8 bytes were interpreted as Latin-1/Windows-1252, recover by re-reading code units as bytes.
+ * Must NOT run on strings that are already correct Unicode: BMP Japanese uses code points > 255 (e.g. の),
+ * and taking only the low byte per unit corrupts text ("UI/UXの改善" → "UI/UXn9�").
  */
 export function recoverUtf8MisreadAsLatin1(s: string): string {
   const t = s.trim();
   if (!t) return t;
-  // High-bit chars that often indicate mis-decoded UTF-8
   if (!/[\u0080-\uFFFF]/.test(t)) return t;
+
+  // Already real Hiragana/Katakana/Kanji/Hangul — not Latin-1-per-byte mojibake.
+  if (/\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Han}|\p{Script=Hangul}/u.test(t)) {
+    return t;
+  }
+
   try {
     const bytes = new Uint8Array(t.length);
     for (let i = 0; i < t.length; i++) bytes[i] = t.charCodeAt(i) & 0xff;
     const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-    // Prefer decoded text when it contains CJK or common JP markers
+    const origRepl = (t.match(/\uFFFD/g) || []).length;
+    const decRepl = (decoded.match(/\uFFFD/g) || []).length;
+    if (decRepl > origRepl) return t;
+
     if (/[\u3040-\u30ff\u4e00-\u9fff\u3000-\u303f]/.test(decoded) || /修正|完了|確認/.test(decoded)) {
       return decoded.trim();
     }
-    if (decoded && decoded !== t && !/�{2,}/.test(decoded)) return decoded.trim();
+    if (decoded && decoded !== t && !/\uFFFD{2,}/.test(decoded)) return decoded.trim();
   } catch {
     /* ignore */
   }
@@ -92,11 +151,6 @@ function normalizeImportedCell(v: unknown): unknown {
   if (v === null || v === undefined) return '';
   if (typeof v === 'string') return stripTextNuls(recoverUtf8MisreadAsLatin1(v));
   return v;
-}
-
-/** Strip BOM from first header when present. */
-function stripBom(s: string): string {
-  return s.replace(/^\ufeff/, '');
 }
 
 function makeUniqueHeaders(headerCells: unknown[]): string[] {

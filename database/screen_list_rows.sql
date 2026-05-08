@@ -12,6 +12,7 @@ create table public.screen_list_rows (
   screen_name text not null default ''::text,
   screen_name_ja text not null default ''::text,
   path text not null default ''::text,
+  path_ja text not null default ''::text,
   overview text not null default ''::text,
   overview_ja text not null default ''::text,
   status public.screen_status null default 'Not started'::screen_status,

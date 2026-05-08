@@ -7,6 +7,7 @@ create table public.test_case_rows (
   scenario_name text not null default ''::text,
   scenario_name_ja text not null default ''::text,
   test_type text not null default ''::text,
+  test_type_ja text not null default ''::text,
   summary text not null default ''::text,
   summary_ja text not null default ''::text,
   test_steps text not null default ''::text,

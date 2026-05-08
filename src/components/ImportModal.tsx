@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Upload, Loader } from 'lucide-react';
 import type { SheetTab, ImportValidationPreview } from '@/types';
 import * as XLSX from 'xlsx';
-import { parseWorksheetForImport } from '@/lib/importSheet';
+import { decodeCsvFileText, parseWorksheetForImport } from '@/lib/importSheet';
 import { ColumnMappingUI } from './ColumnMappingUI';
 import { translate, type Language } from '@/lib/data';
 
@@ -52,10 +52,7 @@ export function ImportModal({
     try {
       const arrayBuffer = await file.arrayBuffer();
       const workbook = isCsv
-        ? XLSX.read(
-            new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(arrayBuffer)).replace(/^\ufeff/, ''),
-            { type: 'string' }
-          )
+        ? XLSX.read(decodeCsvFileText(arrayBuffer), { type: 'string' })
         : XLSX.read(arrayBuffer, { type: 'array' });
       
       // Get first sheet

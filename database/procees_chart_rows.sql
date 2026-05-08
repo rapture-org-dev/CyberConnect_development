@@ -8,6 +8,7 @@ create table public.process_chart_rows (
   task text not null default ''::text,
   task_ja text not null default ''::text,
   sprint text not null default ''::text,
+  sprint_ja text not null default ''::text,
   person_days numeric(6, 1) null,
   status public.process_status null default 'Planned'::process_status,
   created_at timestamp with time zone not null default now(),
