@@ -7,6 +7,8 @@ import { SheetRow, ImportValidationResult, ImportFinalResult, ImportConflict, Co
 import { SupabaseClient } from '@supabase/supabase-js'
 import { computeNextTaskCode } from '@/lib/taskCodes'
 import { recoverUtf8MisreadAsLatin1, stripTextNuls } from '@/lib/importSheet'
+import { TABLE_NATIVE_KEYS } from '@/lib/tableNativeKeys'
+import { mergeExtrasIntoSheetRow } from '@/lib/sheetRows'
 
 /**
  * Server-side actions for managing Sheet Rows across all tables.
@@ -208,11 +210,38 @@ function extractPostgrestErrorMessage(err: unknown): string {
   }
 }
 
+function partitionExtrasIntoColumn(
+  clean: Record<string, unknown>,
+  tableName: string,
+  originalRow: Record<string, unknown>
+) {
+  const native = TABLE_NATIVE_KEYS[tableName]
+  if (!native) return
+
+  const system = new Set(['id', 'project_id', 'created_at', 'updated_at', 'sort_order', 'extras'])
+  const existingExtrasRaw = originalRow.extras
+  const existingExtras =
+    existingExtrasRaw && typeof existingExtrasRaw === 'object' && !Array.isArray(existingExtrasRaw)
+      ? { ...(existingExtrasRaw as Record<string, unknown>) }
+      : {}
+
+  const extraPayload: Record<string, unknown> = {}
+  for (const key of Object.keys(clean)) {
+    if (native.has(key) || system.has(key)) continue
+    extraPayload[key] = clean[key]
+    delete clean[key]
+  }
+
+  clean.extras = { ...existingExtras, ...extraPayload }
+}
+
 function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
   const clean: Record<string, unknown> = {}
 
   for (const key in row) {
     let val = row[key]
+
+    if (key === 'extras') continue
     
     // 0. Skip virtual/UI-only fields
     if (key === 'assignedDevIds' || key === 'project_name') continue
@@ -364,6 +393,8 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
       if (clean[key] === null || clean[key] === undefined) clean[key] = '';
     }
   }
+
+  partitionExtrasIntoColumn(clean, tableName, row)
 
   return clean;
 }
@@ -574,7 +605,7 @@ export async function getSheetRowsAction(projectId: string, tabId: string): Prom
     return []
   }
 
-  const rows = (data ?? []) as SheetRow[]
+  const rows = (data ?? []).map((r) => mergeExtrasIntoSheetRow(r as Record<string, unknown>))
   if (tabId === 'tasks') return shapeTaskRowsForClient(rows)
   return rows
 }

@@ -8,6 +8,7 @@ import { SheetRowDetail } from '@/components/SheetRowDetail';
 import { AddRowDrawer } from '@/components/AddRowDrawer';
 import { ExportModal } from '@/components/ExportModal';
 import { sheetTabs, getCurrentUserProjectSheetRole, getLocalizedProjectName, isSheetBundleComplete } from '@/lib/data';
+import { mergeTabWithLayout } from '@/lib/sheetColumnLayout';
 import { useMemo, useEffect, useState } from 'react';
 import type { SheetRow } from '@/types';
 
@@ -29,6 +30,7 @@ export default function PersonalProjectTabPage() {
     addSheetRow,
     deleteSheetRow,
     deleteSheetRows,
+    sheetColumnLayouts,
   } = useWorkspace();
 
   const projectId = params.id as string;
@@ -56,6 +58,10 @@ export default function PersonalProjectTabPage() {
 
   const activeProject = useMemo(() => getProjectById(projectId), [getProjectById, projectId]);
   const activeTab = useMemo(() => sheetTabs.find(t => t.id === tabId), [tabId]);
+  const effectiveTab = useMemo(() => {
+    if (!activeTab) return undefined;
+    return mergeTabWithLayout(activeTab, sheetColumnLayouts[projectId]?.[tabId]);
+  }, [activeTab, sheetColumnLayouts, projectId, tabId]);
 
   const projectSheetRole = useMemo(
     () => getCurrentUserProjectSheetRole(loggedInUser?.id, activeProject, 'pm'),
@@ -96,7 +102,7 @@ export default function PersonalProjectTabPage() {
     );
   }
 
-  if (!activeProject || !activeTab || !loggedInUser) return null;
+  if (!activeProject || !activeTab || !effectiveTab || !loggedInUser) return null;
 
   if (isSheetLoading) {
     return (
@@ -110,7 +116,7 @@ export default function PersonalProjectTabPage() {
     <>
       <Header
         projectSheetRole={projectSheetRole}
-        tab={activeTab}
+        tab={effectiveTab}
         totalRows={currentRows.length}
         projectName={getLocalizedProjectName(activeProject, language)}
         language={language}
@@ -120,7 +126,7 @@ export default function PersonalProjectTabPage() {
       <div className="flex-1 flex flex-row overflow-hidden relative">
         <div className="flex-1 overflow-hidden relative">
           <GenericSheet
-            tab={activeTab}
+            tab={effectiveTab}
             rows={currentRows}
             project={activeProject}
             projectSheetRole={projectSheetRole}
@@ -137,12 +143,13 @@ export default function PersonalProjectTabPage() {
               setShowAddRow(true);
             }}
             selectedRowId={selectedRow?.id ?? null}
+            canManageSheetColumns={projectSheetRole === 'pm'}
           />
         </div>
 
         {selectedRowSynced && (
           <SheetRowDetail
-            tab={activeTab}
+            tab={effectiveTab}
             row={selectedRowSynced}
             project={activeProject}
             projectSheetRole={projectSheetRole}
@@ -159,7 +166,7 @@ export default function PersonalProjectTabPage() {
 
         {showAddRow && (
           <AddRowDrawer
-            tab={activeTab}
+            tab={effectiveTab}
             projectId={projectId}
             project={activeProject}
             projectSheetRole={projectSheetRole}
@@ -176,7 +183,7 @@ export default function PersonalProjectTabPage() {
       </div>
 
       {showExport && (
-        <ExportModal tab={activeTab} rows={currentRows} onClose={() => setShowExport(false)} />
+        <ExportModal tab={effectiveTab} rows={currentRows} onClose={() => setShowExport(false)} />
       )}
     </>
   );

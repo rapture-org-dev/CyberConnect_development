@@ -18,7 +18,7 @@ import {
   sheetTabs,
   type Language,
 } from '@/lib/data';
-import type { UserProfile, Project, SheetRow, UserRole, TeamMembership } from '@/types';
+import type { UserProfile, Project, SheetRow, SheetColumn, UserRole, TeamMembership } from '@/types';
 import { regenerateTeamInviteCodeAction, updateTeamAction } from '@/actions/teams';
 import { clearLoginSessionStorage } from '@/lib/loginSession';
 
@@ -57,6 +57,9 @@ interface WorkspaceContextType {
   addSheetRow: (projectId: string, tabId: string, newRow: SheetRow) => Promise<SheetRow>;
   deleteSheetRow: (projectId: string, tabId: string, rowId: string) => Promise<void>;
   deleteSheetRows: (projectId: string, tabId: string, rowIds: string[]) => Promise<void>;
+  /** Saved column layouts per tab (merged in the UI with defaults from `sheetTabs`). */
+  sheetColumnLayouts: Record<string, Partial<Record<string, SheetColumn[]>>>;
+  refreshSheetColumnLayouts: (projectId: string) => Promise<void>;
   refreshTeamMemberships: () => Promise<void>;
   /** Admin dashboard: which project is selected in the main workspace panel. */
   selectedAdminProjectId: string | null;
@@ -78,6 +81,9 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   /** Used for Realtime: team_id of the URL-scoped team (invite joins insert into this team). */
   const [realtimeTeamId, setRealtimeTeamId] = useState<string | null>(null);
   const [sheetData, setSheetData] = useState<Record<string, Record<string, SheetRow[]>>>({});
+  const [sheetColumnLayouts, setSheetColumnLayouts] = useState<
+    Record<string, Partial<Record<string, SheetColumn[]>>>
+  >({});
   const [sheetLoadingProjects, setSheetLoadingProjects] = useState<Record<string, boolean>>({});
   const [language, setLanguage] = useState<Language>('en');
   const [selectedAdminProjectId, setSelectedAdminProjectId] = useState<string | null>(null);
@@ -370,6 +376,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
       setLoggedInUser(null);
       setProjects([]);
       setSheetData({});
+      setSheetColumnLayouts({});
       setTeamPool([]);
       setTeamMemberships([]);
       setRealtimeTeamId(null);
@@ -485,18 +492,37 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     router.push(`/${activeTeamSlug}/admin/dashboard`);
   }, [loggedInUser, router]);
 
+  const refreshSheetColumnLayouts = useCallback(async (projectId: string) => {
+    try {
+      const { getProjectSheetColumnLayoutsAction } = await import('@/actions/sheetColumnLayout');
+      const map = await getProjectSheetColumnLayoutsAction(projectId);
+      setSheetColumnLayouts((prev) => ({ ...prev, [projectId]: map }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const refreshSheetData = useCallback(async (projectId: string) => {
     setSheetLoadingProjects(prev => ({ ...prev, [projectId]: true }));
     const dataTabs = sheetTabs.filter(t => !t.isSpecialView);
     try {
-      const results = await Promise.all(
-        dataTabs.map(tab => getSheetRowsAction(projectId, tab.id).then(rows => ({ tabId: tab.id, rows })))
-      );
+      const { getProjectSheetColumnLayoutsAction } = await import('@/actions/sheetColumnLayout');
+      const [results, layoutMap] = await Promise.all([
+        Promise.all(
+          dataTabs.map((tab) =>
+            getSheetRowsAction(projectId, tab.id).then((rows) => ({ tabId: tab.id, rows }))
+          )
+        ),
+        getProjectSheetColumnLayoutsAction(projectId).catch(() => ({} as Partial<Record<string, SheetColumn[]>>)),
+      ]);
       const newData: Record<string, SheetRow[]> = {};
-      results.forEach(res => { newData[res.tabId] = res.rows; });
-      setSheetData(prev => ({ ...prev, [projectId]: newData }));
+      results.forEach((res) => {
+        newData[res.tabId] = res.rows;
+      });
+      setSheetData((prev) => ({ ...prev, [projectId]: newData }));
+      setSheetColumnLayouts((prev) => ({ ...prev, [projectId]: layoutMap }));
     } finally {
-      setSheetLoadingProjects(prev => ({ ...prev, [projectId]: false }));
+      setSheetLoadingProjects((prev) => ({ ...prev, [projectId]: false }));
     }
   }, []);
 
@@ -714,6 +740,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     const { updateActiveRoleAction } = await import('@/actions/auth');
     setProjects([]);
     setSheetData({});
+    setSheetColumnLayouts({});
 
     if (scope === 'personal') {
       await updateActiveRoleAction('personal');
@@ -723,6 +750,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
         activeTeamSlug: undefined 
       } : null);
       setWorkspaceScope('personal');
+      setSheetColumnLayouts({});
       router.push('/personal/dashboard');
     } else {
       const slug = loggedInUser?.activeTeamSlug || 'my-team';
@@ -731,6 +759,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
         prev ? { ...prev, activeWorkspaceRole: 'admin', activeTeamSlug: slug } : null
       );
       setWorkspaceScope('team');
+      setSheetColumnLayouts({});
       router.push(`/${slug}/admin/dashboard`);
     }
     router.refresh();
@@ -773,6 +802,8 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     addSheetRow,
     deleteSheetRow,
     deleteSheetRows,
+    sheetColumnLayouts,
+    refreshSheetColumnLayouts,
     refreshTeamMemberships,
     selectedAdminProjectId,
     setSelectedAdminProjectId,

@@ -1,4 +1,5 @@
 import type { SheetTab, SheetColumn, SheetRow, Project, UserProfile, UserRole, TeamMembership } from '@/types';
+import { isCustomColumnKey } from '@/lib/sheetColumnLayout';
 
 /** Project-scoped role for sheet read/write rules (distinct from URL/workspace routing). */
 export type ProjectSheetRole = 'pm' | 'dev' | 'client';
@@ -297,12 +298,12 @@ const bilingualRowFieldMap: Record<string, Record<string, string>> = {
 };
 
 export function getBilingualRowFieldKey(tabId: string, key: string): string | null {
+  if (isCustomColumnKey(key)) return `${key}_ja`;
   return bilingualRowFieldMap[tabId]?.[key] ?? null;
 }
 
 /** Sheet fields available in batch-import column mapping (EN keys + `*_ja` from bilingualRowFieldMap). */
 export function getImportMappingTargetsForTab(tab: SheetTab): { key: string; label: string }[] {
-  const jaMap = bilingualRowFieldMap[tab.id] ?? {};
   const keysSeen = new Set<string>();
   const out: { key: string; label: string }[] = [];
 
@@ -311,10 +312,15 @@ export function getImportMappingTargetsForTab(tab: SheetTab): { key: string; lab
       keysSeen.add(c.key);
       out.push({ key: c.key, label: c.label });
     }
-    const jaKey = jaMap[c.key];
-    if (jaKey && !keysSeen.has(jaKey)) {
+    const jaKey = getBilingualRowFieldKey(tab.id, c.key);
+    if (
+      jaKey &&
+      !keysSeen.has(jaKey) &&
+      !tab.columns.some((col) => col.key === jaKey)
+    ) {
       keysSeen.add(jaKey);
-      out.push({ key: jaKey, label: `${c.label} (JA)` });
+      const jaLabel = c.labelJa?.trim() ? c.labelJa : c.label;
+      out.push({ key: jaKey, label: `${jaLabel} (JA)` });
     }
   }
 

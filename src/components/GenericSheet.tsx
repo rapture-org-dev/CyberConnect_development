@@ -15,8 +15,9 @@ import {
   type ProjectSheetRole,
   isTasksTab,
 } from '@/lib/data';
-import { ChevronUp, ChevronDown, Trash2, Plus, Download, Loader2, X } from 'lucide-react';
+import { ChevronUp, ChevronDown, Trash2, Plus, Download, Loader2, X, Columns3 } from 'lucide-react';
 import { ImportModal } from './ImportModal';
+import { SheetColumnManagerModal } from './SheetColumnManagerModal';
 import { ImportPreviewModal } from './ImportPreviewModal';
 import { ConflictResolver } from './ConflictResolver';
 import { ImportResults } from './ImportResults';
@@ -35,6 +36,9 @@ interface Props {
   onDeleteRows?: (ids: string[]) => void | Promise<void>;
   onAddRow: () => void;
   selectedRowId: string | null;
+  /** PM / project owner: open column layout editor (reorder, relabel, custom fields). */
+  canManageSheetColumns?: boolean;
+  onSheetColumnsChanged?: () => void;
 }
 
 const statusColors: Record<string, { text: string; bg: string }> = {
@@ -120,8 +124,10 @@ export function GenericSheet({
   onDeleteRows,
   onAddRow,
   selectedRowId,
+  canManageSheetColumns = false,
+  onSheetColumnsChanged,
 }: Props) {
-  const { refreshSheetTab } = useWorkspace();
+  const { refreshSheetTab, refreshSheetColumnLayouts } = useWorkspace();
   const [sortKey, setSortKey] = useState<string>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [editingCell, setEditingCell] = useState<{ id: string; key: string } | null>(null);
@@ -148,6 +154,7 @@ export function GenericSheet({
   const [importSaving, setImportSaving] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
   const [pendingBatchDelete, setPendingBatchDelete] = useState(false);
+  const [showColumnManager, setShowColumnManager] = useState(false);
   /** Avoid ref-callback DOM writes during React placement (fixes insertBefore errors after bulk row refresh). */
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   const displayColumns = tab.columns.flatMap((c) => {
@@ -401,7 +408,7 @@ export function GenericSheet({
       {sheetMutationError && (
         <div className="px-4 py-2.5 bg-red-500/10 border-b border-red-500/20 text-base text-red-300 shrink-0">{sheetMutationError}</div>
       )}
-      <div className="px-4 py-2 border-b border-surface-800 flex items-center gap-2 bg-surface-950/50">
+      <div className="px-4 py-2 border-b border-surface-800 flex flex-wrap items-center gap-2 bg-surface-950/50">
         {canAddRow && (
           <>
             <button
@@ -419,6 +426,16 @@ export function GenericSheet({
               Batch Import
             </button>
           </>
+        )}
+        {canManageSheetColumns && project?.id && !tab.isSpecialView && tab.columns.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowColumnManager(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-surface-600 bg-surface-900 hover:bg-surface-800 text-gray-200 rounded-lg text-base font-medium transition-all"
+          >
+            <Columns3 className="w-4 h-4" />
+            {language === 'ja' ? '列' : 'Columns'}
+          </button>
         )}
         {showBatchDelete && selectedRowIds.size > 0 && (
           <button
@@ -755,6 +772,20 @@ export function GenericSheet({
           duplicateCount={importDuplicateCount}
           language={language}
           onClose={handleImportComplete}
+        />
+      )}
+
+      {canManageSheetColumns && project?.id && (
+        <SheetColumnManagerModal
+          open={showColumnManager}
+          tab={tab}
+          projectId={project.id}
+          language={language}
+          onClose={() => setShowColumnManager(false)}
+          onSaved={() => {
+            void refreshSheetColumnLayouts(project.id);
+            onSheetColumnsChanged?.();
+          }}
         />
       )}
     </div>
