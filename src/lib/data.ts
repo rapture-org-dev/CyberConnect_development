@@ -515,7 +515,7 @@ export const sheetTabs: SheetTab[] = [
     visibleTo: ['admin', 'pm', 'dev', 'client'],
     columns: [
       col('screen_code', 'Code', '画面ID', 120, 'code', false),
-      col('user_category', 'User', 'ユーザー', 120, 'text', true),
+      col('user_category', 'User', 'ユーザー', 184, 'text', true),
       col('major_item', 'Major', '大項目', 120, 'text', true),
       col('medium_item', 'Medium', '中項目', 120, 'text', true),
       col('screen_name', 'Name', '画面名', 180, 'text', true),
@@ -544,7 +544,7 @@ export const sheetTabs: SheetTab[] = [
     columns: [
       col('function_code', 'Code', '機能ID', 120, 'code', false),
       col('phase', 'Phase', 'フェーズ', 100, 'select', true, ['MVP', 'v2', 'v3', 'actual_performance']),
-      col('user_category', 'User', 'ユーザー', 120, 'text', true),
+      col('user_category', 'User', 'ユーザー', 184, 'text', true),
       col('main_category', 'Main', '大項目', 140, 'text', true),
       col('subcategory', 'Sub', '中項目', 140, 'text', true),
       col('screen_code', 'Screen', '画面ID', 100, 'text', true),

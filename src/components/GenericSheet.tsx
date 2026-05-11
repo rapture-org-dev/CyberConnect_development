@@ -100,8 +100,8 @@ function sheetDataColumnStyle(px: number, colType?: SheetColumn['type']): CSSPro
     width: px,
     minWidth: px,
     maxWidth: px,
-    wordBreak: 'break-word',
-    overflowWrap: 'anywhere',
+    wordBreak: 'normal',
+    overflowWrap: 'break-word',
   };
 }
 
@@ -679,7 +679,7 @@ export function GenericSheet({
                         </span>
                       ) : (
                         <span
-                          className={`block whitespace-normal break-words text-gray-300 text-base ${isGuestEditable ? 'cursor-text' : ''}`}
+                          className={`block whitespace-normal break-words text-gray-300 text-base leading-relaxed ${isGuestEditable ? 'cursor-text' : ''}`}
                         >
                           {displayValue || <span className="text-gray-600">—</span>}
                         </span>
