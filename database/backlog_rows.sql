@@ -9,7 +9,7 @@ create table public.backlog_rows (
   task text not null default ''::text,
   task_ja text not null default ''::text,
   owner_id uuid null,
-  sprint public.sprint_slot null default 'Backlog'::sprint_slot,
+  sprint text not null default ''::text,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
   constraint backlog_rows_pkey primary key (id),

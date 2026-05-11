@@ -456,8 +456,9 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
   }
 
   if (tableName === 'backlog_rows') {
-    // Sprint is an enum here
-    if (clean.sprint === '') clean.sprint = 'Backlog';
+    if (clean.sprint !== undefined && clean.sprint !== null) {
+      clean.sprint = String(clean.sprint).trim()
+    }
   }
 
   if (tableName === 'purpose_rows') {
