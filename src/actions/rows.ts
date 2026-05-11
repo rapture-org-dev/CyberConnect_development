@@ -2,7 +2,11 @@
 
 import { createClient } from '@/lib/supabase-server'
 import { getSession } from './auth'
-import { resolveTeamProjectPrivilege, canMutateSheetRows } from '@/lib/team-project-auth'
+import {
+  resolveTeamProjectPrivilege,
+  canMutateSheetRows,
+  type TeamProjectPrivilege,
+} from '@/lib/team-project-auth'
 import { SheetRow, ImportValidationResult, ImportFinalResult, ImportConflict, ConflictChoice, ImportPreviewRow } from '@/types'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { computeNextTaskCode } from '@/lib/taskCodes'
@@ -131,6 +135,7 @@ function canonicalPhaseTypeValue(val: unknown): string | null {
 const FUNCTION_LIST_STATUS_CANONICAL = new Set([
   'Not started',
   'In progress',
+  'In review',
   'Completed',
   'Need to be checked',
 ])
@@ -165,12 +170,18 @@ function canonicalFunctionListStatusValue(val: unknown): string {
   const enAlias: Record<string, string> = {
     'not started': 'Need to be checked',
     'in progress': 'In progress',
+    'in review': 'In review',
     completed: 'Completed',
     'need to be checked': 'Need to be checked',
   }
   if (enAlias[lower]) return enAlias[lower]
 
+  const compact = lower.replace(/[^a-z]/g, '')
+  if (compact === 'inreview') return 'In review'
+
   // Bilingual cell as exported from sheets (JP + EN)
+  if (/レビュー中/.test(raw)) return 'In review'
+
   if (/修正中\s*fixing/i.test(raw) || /^修正中$/.test(raw.trim())) return 'In progress'
 
   if (/修正中|修正/.test(raw)) return 'In progress'
@@ -178,6 +189,62 @@ function canonicalFunctionListStatusValue(val: unknown): string {
   if (/要確認|未着手/.test(raw)) return 'Need to be checked'
 
   return 'Need to be checked'
+}
+
+/** Valid `screen_status` enum labels used by the app / DB. */
+const SCREEN_LIST_STATUS_CANONICAL = new Set([
+  'Not started',
+  'In progress',
+  'In review',
+  'Completed',
+  'Need to be checked',
+])
+
+/** Map spreadsheet status (JP/EN, bilingual cells, mojibake) to `screen_status`. */
+function canonicalScreenListStatusValue(val: unknown): string {
+  let raw = String(val ?? '')
+    .trim()
+    .replace(/\u00a0/g, ' ')
+    .replace(/\u200b/g, '')
+  raw = recoverUtf8MisreadAsLatin1(raw)
+  raw = raw
+    .replace(/\s*,\s*Fixing\s*$/i, '')
+    .replace(/\s+Fixing\s*$/i, '')
+    .trim()
+  if (!raw) return 'Not started'
+
+  if (SCREEN_LIST_STATUS_CANONICAL.has(raw)) {
+    return raw
+  }
+
+  const lower = raw.toLowerCase().replace(/\s+/g, ' ').replace(/…/g, '...')
+
+  if (/^need to be c(?:hecked)?/.test(lower) || lower.startsWith('need to be checked')) {
+    return 'Need to be checked'
+  }
+
+  const enAlias: Record<string, string> = {
+    'not started': 'Not started',
+    'in progress': 'In progress',
+    'in review': 'In review',
+    completed: 'Completed',
+    'need to be checked': 'Need to be checked',
+  }
+  if (enAlias[lower]) return enAlias[lower]
+
+  const compact = lower.replace(/[^a-z]/g, '')
+  if (compact === 'inreview') return 'In review'
+
+  if (/レビュー中/.test(raw)) return 'In review'
+
+  if (/修正中\s*fixing/i.test(raw) || /^修正中$/.test(raw.trim())) return 'In progress'
+
+  if (/修正中|修正/.test(raw)) return 'In progress'
+  if (/完了|完成/.test(raw)) return 'Completed'
+  if (/要確認/.test(raw)) return 'Need to be checked'
+  if (/未着手/.test(raw)) return 'Not started'
+
+  return 'Not started'
 }
 
 function normalizeFunctionListCheckField(val: unknown): string | null {
@@ -351,6 +418,11 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
       clean.remarks = clean.remark;
       delete clean.remark;
     }
+    if (clean.status !== undefined && clean.status !== null && String(clean.status).trim() !== '') {
+      clean.status = canonicalScreenListStatusValue(clean.status)
+    } else {
+      clean.status = 'Not started'
+    }
   }
 
   if (tableName === 'function_list_rows') {
@@ -495,7 +567,7 @@ async function assertCanMutateTeamSheets(supabase: SupabaseClient, projectId: st
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, team_id, workspace_type, pm_id')
+    .select('id, team_id, workspace_type, pm_id, client_id')
     .eq('id', projectId)
     .maybeSingle()
 
@@ -503,6 +575,27 @@ async function assertCanMutateTeamSheets(supabase: SupabaseClient, projectId: st
 
   const priv = await resolveTeamProjectPrivilege(supabase, profile.id, project)
   if (!canMutateSheetRows(priv)) throw new Error('Forbidden')
+}
+
+/** Team projects only; otherwise null (personal / non-team uses full row upsert). */
+async function resolveTeamProjectPrivilegeForMutation(
+  supabase: SupabaseClient,
+  profileId: string,
+  projectId: string
+): Promise<TeamProjectPrivilege | null> {
+  const { data: project } = await supabase
+    .from('projects')
+    .select('id, team_id, workspace_type, pm_id, client_id')
+    .eq('id', projectId)
+    .maybeSingle()
+  if (!project || project.workspace_type !== 'team' || !project.team_id) return null
+  return resolveTeamProjectPrivilege(supabase, profileId, project)
+}
+
+/** Dev + client/member assignees: DB RBAC allows only `status` updates on these tabs (matches trigger). */
+function isAssigneeStatusOnlySheetTab(tabId: string, priv: TeamProjectPrivilege | null): boolean {
+  if (tabId !== 'function_list' && tabId !== 'screen_list') return false
+  return priv === 'project_dev' || priv === 'project_assignee'
 }
 
 /** Team projects: PM, client, and all project_members may be task assignees (not only devs). */
@@ -623,6 +716,34 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
 
   const cleanedData = sanitizeRowData(row, tableName)
 
+  const { data: profileForPriv } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', session.email)
+    .maybeSingle()
+  if (!profileForPriv) throw new Error('Unauthorized')
+  const teamPriv = await resolveTeamProjectPrivilegeForMutation(
+    supabase,
+    profileForPriv.id,
+    row.project_id
+  )
+  if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .update({ status: cleanedData.status })
+      .eq('id', row.id)
+      .eq('project_id', row.project_id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
+      throw mapUniqueViolationError(tableName, error)
+    }
+
+    return data as SheetRow
+  }
+
   let payload: Record<string, unknown> = cleanedData
   if (tableName === 'task_rows') {
     const allowed = await loadTeamProjectAssignableProfileIds(supabase, row.project_id);
@@ -694,6 +815,36 @@ export async function upsertSheetRowsBatchAction(
   const supabase = await createClient()
   if (!(await verifyProjectAccess(supabase, projectId))) throw new Error('Forbidden')
   await assertCanMutateTeamSheets(supabase, projectId)
+
+  const { data: profileForPriv } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', session.email)
+    .maybeSingle()
+  if (!profileForPriv) throw new Error('Unauthorized')
+  const teamPriv = await resolveTeamProjectPrivilegeForMutation(supabase, profileForPriv.id, projectId)
+
+  if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
+    const savedRows: SheetRow[] = []
+    for (const row of deduped) {
+      const base = { ...row, project_id: projectId } as Record<string, unknown>
+      const cleanedData = sanitizeRowData(base, tableName)
+      const { data, error } = await supabase
+        .from(tableName)
+        .update({ status: cleanedData.status })
+        .eq('id', row.id)
+        .eq('project_id', projectId)
+        .select()
+        .single()
+      if (error) {
+        console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
+        throw mapUniqueViolationError(tableName, error)
+      }
+      if (data) savedRows.push(data as SheetRow)
+    }
+    const order = new Map(deduped.map((r, i) => [r.id, i]))
+    return [...savedRows].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  }
 
   const assignableProfileIds =
     tableName === 'task_rows' ? await loadTeamProjectAssignableProfileIds(supabase, projectId) : null

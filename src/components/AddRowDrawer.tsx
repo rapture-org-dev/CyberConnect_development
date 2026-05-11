@@ -131,11 +131,13 @@ export function AddRowDrawer({
     try {
       await onSave(newRow);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
+      const msg = err instanceof Error ? err.message : ''
       if (msg === 'duplicate_task_code') {
-        setSaveError(translate('duplicate_task_code', language));
+        setSaveError(translate('duplicate_task_code', language))
+      } else if (msg) {
+        setSaveError(msg)
       } else {
-        setSaveError(translate('Save failed', language));
+        setSaveError(translate('Save failed', language))
       }
     } finally {
       setSavePending(false);

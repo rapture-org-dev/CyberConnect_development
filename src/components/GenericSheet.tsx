@@ -187,7 +187,6 @@ export function GenericSheet({
   const pm = projectSheetRole === 'pm';
 
   const canEditCell = (colKey: string) => {
-    if (!tasks && !pm) return false;
     if (tasks) {
       if (pm) return true;
       if (projectSheetRole === 'dev') {
@@ -196,7 +195,15 @@ export function GenericSheet({
       }
       return false;
     }
-    return pm;
+    if (pm) return true;
+    if (
+      (tab.id === 'screen_list' || tab.id === 'function_list') &&
+      colKey === 'status' &&
+      (projectSheetRole === 'dev' || projectSheetRole === 'client')
+    ) {
+      return true;
+    }
+    return false;
   };
 
   const canAddRow = tab.pmCanAddRows && (pm || (tasks && projectSheetRole === 'dev'));
@@ -239,9 +246,13 @@ export function GenericSheet({
       await Promise.resolve(onUpdateRow(cell.id, cell.key, editValue));
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
-      setSheetMutationError(
-        msg === 'duplicate_task_code' ? translate('duplicate_task_code', language) : translate('Save failed', language)
-      );
+      if (msg === 'duplicate_task_code') {
+        setSheetMutationError(translate('duplicate_task_code', language))
+      } else if (msg) {
+        setSheetMutationError(msg)
+      } else {
+        setSheetMutationError(translate('Save failed', language))
+      }
     } finally {
       setPendingSaveCell(null);
     }

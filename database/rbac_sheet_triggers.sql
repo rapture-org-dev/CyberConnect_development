@@ -16,8 +16,9 @@
 -- =============================================================================
 
 -- Resolve the effective sheet role for the current user on a project.
--- Priority: personal owner -> team admin -> projects.pm_id -> project_members -> client_id
--- -> default restrictive (client).
+-- Priority: personal owner -> profiles.role admin -> team.owner -> team admin member ->
+-- projects.pm_id -> project_members.workspace_role -> client_id -> default client.
+-- Keep ordering aligned with src/lib/team-project-auth.ts resolveTeamProjectPrivilege.
 CREATE OR REPLACE FUNCTION public.resolve_project_sheet_role (p_project_id uuid)
   RETURNS text
   LANGUAGE plpgsql
@@ -94,6 +95,32 @@ BEGIN
     RETURN 'pm';
   END IF;
 
+  -- Platform profile admin (matches app: full sheet access before project_members.dev).
+  -- Compare as text: production DBs may use enum user_role without an 'admin' label — comparing
+  -- to 'admin'::user_role raises invalid input; ::text matches migrate_project_sheet_column_layouts_rls.sql.
+  IF EXISTS (
+    SELECT
+      1
+    FROM
+      public.profiles p
+    WHERE
+      p.id = uid
+      AND p.role::text = 'admin') THEN
+    RETURN 'pm';
+  END IF;
+
+  -- Team billing owner (matches app resolveTeamProjectPrivilege).
+  IF v_team_id IS NOT NULL AND EXISTS (
+    SELECT
+      1
+    FROM
+      public.teams t
+    WHERE
+      t.id = v_team_id
+      AND t.owner_id = uid) THEN
+    RETURN 'pm';
+  END IF;
+
   -- Team company admin: full PM-level access to all team projects
   IF v_team_id IS NOT NULL AND EXISTS (
     SELECT
@@ -135,7 +162,8 @@ END;
 $func$;
 
 -- -----------------------------------------------------------------------------
--- Strip JSON keys then compare OLD vs NEW (client may only change remark columns).
+-- Strip JSON keys then compare OLD vs NEW (client may change remark columns;
+-- on screen/function sheets also `status` — matches product rule for assignees).
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.sheet_client_json_strip_for_compare (p_table_name text, p_payload jsonb)
   RETURNS jsonb
@@ -155,9 +183,9 @@ BEGIN
   WHEN 'non_func_rows' THEN
     ARRAY['updated_at'::text]
   WHEN 'screen_list_rows' THEN
-    ARRAY['remarks', 'remarks_ja', 'updated_at']
+    ARRAY['remarks', 'remarks_ja', 'status', 'updated_at']
   WHEN 'function_list_rows' THEN
-    ARRAY['remarks', 'remarks_ja', 'updated_at']
+    ARRAY['remarks', 'remarks_ja', 'status', 'updated_at']
   WHEN 'test_case_rows' THEN
     ARRAY['remarks', 'remarks_ja', 'updated_at']
   WHEN 'api_list_rows' THEN
@@ -220,6 +248,14 @@ BEGIN
 
   -- UPDATE
   IF r IN ('dev', 'member') THEN
+    -- Developers may update only `status` on screen/function sheets (same workflow as tasks).
+    IF TG_TABLE_NAME IN ('screen_list_rows', 'function_list_rows') THEN
+      jold := to_jsonb (OLD) - 'status' - 'updated_at';
+      jnew := to_jsonb (NEW) - 'status' - 'updated_at';
+      IF jold IS NOT DISTINCT FROM jnew THEN
+        RETURN NEW;
+      END IF;
+    END IF;
     RAISE EXCEPTION 'Access Denied: Developers have view-only access to this sheet.';
   END IF;
 

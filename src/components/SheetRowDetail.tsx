@@ -58,20 +58,31 @@ export function SheetRowDetail({
     setFormData(next);
   }, [row, tab.id, project?.id, project?.workspace_type, (project?.assignedDevIds ?? []).join(',')]);
 
-  const devNonTaskLock = projectSheetRole === 'dev' && !isTasksTab(tab.id);
+  const statusOnlyTabs = tab.id === 'screen_list' || tab.id === 'function_list';
+  /** Dev may edit only status on Screens / Functions; assignees (client/member) may edit status there too. */
+  const devBlockedNonTaskSheet =
+    projectSheetRole === 'dev' && !isTasksTab(tab.id) && !statusOnlyTabs;
   const clientRemarkKeys = getClientRemarkColumnKeys(tab.id);
   const clientRemarkOnly = projectSheetRole === 'client';
   const oppositeLanguage: Language = language === 'en' ? 'ja' : 'en';
 
+  const clientCanEditStatusHere = clientRemarkOnly && statusOnlyTabs;
+
   const showSave =
-    !devNonTaskLock &&
-    (!clientRemarkOnly || clientRemarkKeys.length > 0);
+    !devBlockedNonTaskSheet &&
+    (!clientRemarkOnly || clientRemarkKeys.length > 0 || clientCanEditStatusHere);
 
   const canEditField = (colKey: string) => {
-    if (devNonTaskLock) return false;
-    if (clientRemarkOnly) return clientRemarkKeys.includes(colKey);
+    if (clientRemarkOnly) {
+      return (
+        clientRemarkKeys.includes(colKey) || (statusOnlyTabs && colKey === 'status')
+      );
+    }
 
     if (projectSheetRole === 'pm') return true;
+    if (statusOnlyTabs && colKey === 'status') {
+      return projectSheetRole === 'dev' || projectSheetRole === 'client';
+    }
     if (projectSheetRole === 'dev' && isTasksTab(tab.id)) {
       const c = tab.columns.find(c => c.key === colKey);
       return c?.editable ?? false;
@@ -87,10 +98,14 @@ export function SheetRowDetail({
     try {
       await Promise.resolve(onUpdate(formData as SheetRow));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      setSaveError(
-        msg === 'duplicate_task_code' ? translate('duplicate_task_code', language) : translate('Save failed', language)
-      );
+      const msg = err instanceof Error ? err.message : ''
+      if (msg === 'duplicate_task_code') {
+        setSaveError(translate('duplicate_task_code', language))
+      } else if (msg) {
+        setSaveError(msg)
+      } else {
+        setSaveError(translate('Save failed', language))
+      }
     } finally {
       setSavePending(false);
     }
@@ -112,7 +127,7 @@ export function SheetRowDetail({
               {String(codeValue)}
             </span>
           )}
-          {(devNonTaskLock || (clientRemarkOnly && !showSave)) && (
+          {(devBlockedNonTaskSheet || (clientRemarkOnly && !showSave)) && (
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-800 text-gray-400 border border-surface-700 shrink-0">
               View only
             </span>
@@ -140,7 +155,11 @@ export function SheetRowDetail({
               const valueJa = String(formData[mergedJaKey] ?? '');
               const editableMerged = canEditField(col.key);
               const lockedMerged =
-                !editableMerged && (clientRemarkOnly || devNonTaskLock);
+                !editableMerged &&
+                (clientRemarkOnly ||
+                  devBlockedNonTaskSheet ||
+                  (statusOnlyTabs && projectSheetRole === 'dev') ||
+                  (projectSheetRole === 'dev' && isTasksTab(tab.id)));
               return (
                 <div key={col.key}>
                   <label className="text-xs text-gray-500 mb-1.5 flex items-center gap-2">
@@ -229,7 +248,12 @@ export function SheetRowDetail({
               ? String(formData[col.key] ?? '')
               : getLocalizedCell(formData as SheetRow, col.key, language);
             const editable = canEditField(col.key);
-            const lockedVisual = !editable && (clientRemarkOnly || devNonTaskLock);
+            const lockedVisual =
+              !editable &&
+              (clientRemarkOnly ||
+                devBlockedNonTaskSheet ||
+                (statusOnlyTabs && projectSheetRole === 'dev') ||
+                (projectSheetRole === 'dev' && isTasksTab(tab.id)));
             const readonlyDisplay =
               col.type === 'status' || col.type === 'select'
                 ? translate(value, language)

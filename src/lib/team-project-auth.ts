@@ -5,6 +5,8 @@ export type TeamProjectPrivilege =
   | 'team_manage'
   | 'project_pm'
   | 'project_dev'
+  /** Client / member rows in project_members, or projects.client_id — sheet RBAC limits what they may write. */
+  | 'project_assignee'
   | 'view';
 
 /**
@@ -14,7 +16,13 @@ export type TeamProjectPrivilege =
 export async function resolveTeamProjectPrivilege(
   supabase: SupabaseClient,
   profileId: string,
-  project: { id: string; team_id: string | null; workspace_type: string; pm_id: string | null }
+  project: {
+    id: string
+    team_id: string | null
+    workspace_type: string
+    pm_id: string | null
+    client_id?: string | null
+  }
 ): Promise<TeamProjectPrivilege> {
   if (project.workspace_type !== 'team' || !project.team_id) return 'view';
 
@@ -44,12 +52,19 @@ export async function resolveTeamProjectPrivilege(
 
   if (project.pm_id === profileId || wr === 'pm') return 'project_pm';
   if (wr === 'dev') return 'project_dev';
+  if (wr === 'client' || wr === 'member') return 'project_assignee';
+  if (project.client_id != null && project.client_id === profileId) return 'project_assignee';
 
   return 'view';
 }
 
 export function canMutateSheetRows(priv: TeamProjectPrivilege): boolean {
-  return priv === 'team_manage' || priv === 'project_pm' || priv === 'project_dev';
+  return (
+    priv === 'team_manage' ||
+    priv === 'project_pm' ||
+    priv === 'project_dev' ||
+    priv === 'project_assignee'
+  );
 }
 
 export function canManageProjectRoles(priv: TeamProjectPrivilege): boolean {
