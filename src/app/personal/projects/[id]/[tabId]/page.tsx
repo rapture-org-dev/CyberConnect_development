@@ -9,6 +9,7 @@ import { AddRowDrawer } from '@/components/AddRowDrawer';
 import { ExportModal } from '@/components/ExportModal';
 import { sheetTabs, getCurrentUserProjectSheetRole, getLocalizedProjectName, isSheetBundleComplete } from '@/lib/data';
 import { mergeTabWithLayout } from '@/lib/sheetColumnLayout';
+import { ScheduleChartView } from '@/components/ScheduleChartView';
 import { useMemo, useEffect, useState } from 'react';
 import type { SheetRow } from '@/types';
 
@@ -35,6 +36,7 @@ export default function PersonalProjectTabPage() {
 
   const projectId = params.id as string;
   const tabId = params.tabId as string;
+  const resolvedTabId = tabId === 'master_schedule' ? 'schedule' : tabId;
 
   const [selectedRow, setSelectedRow] = useState<SheetRow | null>(null);
   const [showAddRow, setShowAddRow] = useState(false);
@@ -56,21 +58,32 @@ export default function PersonalProjectTabPage() {
     }
   }, [projectId, sheetData, sheetLoadingProjects, refreshSheetData, getProjectById, refreshProject]);
 
+  useEffect(() => {
+    if (tabId !== 'master_schedule') return;
+    if (!projectId) return;
+    router.replace(`/personal/projects/${projectId}/schedule`);
+  }, [tabId, projectId, router]);
+
   const activeProject = useMemo(() => getProjectById(projectId), [getProjectById, projectId]);
-  const activeTab = useMemo(() => sheetTabs.find(t => t.id === tabId), [tabId]);
+  const activeTab = useMemo(() => sheetTabs.find(t => t.id === resolvedTabId), [resolvedTabId]);
   const effectiveTab = useMemo(() => {
     if (!activeTab) return undefined;
-    return mergeTabWithLayout(activeTab, sheetColumnLayouts[projectId]?.[tabId]);
-  }, [activeTab, sheetColumnLayouts, projectId, tabId]);
+    return mergeTabWithLayout(activeTab, sheetColumnLayouts[projectId]?.[resolvedTabId]);
+  }, [activeTab, sheetColumnLayouts, projectId, resolvedTabId]);
 
   const projectSheetRole = useMemo(
     () => getCurrentUserProjectSheetRole(loggedInUser?.id, activeProject, 'pm'),
     [loggedInUser?.id, activeProject]
   );
 
+  const taskRows = useMemo(
+    () => sheetData[projectId]?.tasks ?? [],
+    [sheetData, projectId]
+  );
+
   const currentRows = useMemo(() => {
-    return sheetData[projectId]?.[tabId] ?? [];
-  }, [sheetData, projectId, tabId]);
+    return sheetData[projectId]?.[resolvedTabId] ?? [];
+  }, [sheetData, projectId, resolvedTabId]);
 
   const registeredScreenCodes = useMemo(() => {
     const rows = sheetData[projectId]?.screen_list ?? [];
@@ -112,42 +125,52 @@ export default function PersonalProjectTabPage() {
     );
   }
 
+  const headerRowCount =
+    effectiveTab.isSpecialView && effectiveTab.id === 'schedule' ? taskRows.length : currentRows.length;
+
   return (
     <>
       <Header
         projectSheetRole={projectSheetRole}
         tab={effectiveTab}
-        totalRows={currentRows.length}
+        totalRows={headerRowCount}
         projectName={getLocalizedProjectName(activeProject, language)}
         language={language}
         onLanguageChange={setLanguage}
         onExport={() => setShowExport(true)}
+        showExport={!effectiveTab.isSpecialView}
       />
       <div className="flex-1 flex flex-row overflow-hidden relative">
         <div className="flex-1 overflow-hidden relative">
-          <GenericSheet
-            tab={effectiveTab}
-            rows={currentRows}
-            project={activeProject}
-            projectSheetRole={projectSheetRole}
-            language={language}
-            onSelectRow={(row) => {
-              setShowAddRow(false);
-              setSelectedRow(row);
-            }}
-            onUpdateRow={(rowId, key, value) => updateSheetRow(projectId, tabId, rowId, key, value)}
-            onDeleteRow={(rowId) => deleteSheetRow(projectId, tabId, rowId)}
-            onDeleteRows={(ids) => deleteSheetRows(projectId, tabId, ids)}
-            onAddRow={() => {
-              setSelectedRow(null);
-              setShowAddRow(true);
-            }}
-            selectedRowId={selectedRow?.id ?? null}
-            canManageSheetColumns={projectSheetRole === 'pm'}
-          />
+          {effectiveTab.isSpecialView && effectiveTab.id === 'schedule' ? (
+            <ScheduleChartView tasks={taskRows} language={language} />
+          ) : (
+            <GenericSheet
+              tab={effectiveTab}
+              rows={currentRows}
+              project={activeProject}
+              projectSheetRole={projectSheetRole}
+              language={language}
+              onSelectRow={(row) => {
+                setShowAddRow(false);
+                setSelectedRow(row);
+              }}
+              onUpdateRow={(rowId, key, value) =>
+                updateSheetRow(projectId, resolvedTabId, rowId, key, value)
+              }
+              onDeleteRow={(rowId) => deleteSheetRow(projectId, resolvedTabId, rowId)}
+              onDeleteRows={(ids) => deleteSheetRows(projectId, resolvedTabId, ids)}
+              onAddRow={() => {
+                setSelectedRow(null);
+                setShowAddRow(true);
+              }}
+              selectedRowId={selectedRow?.id ?? null}
+              canManageSheetColumns={projectSheetRole === 'pm'}
+            />
+          )}
         </div>
 
-        {selectedRowSynced && (
+        {selectedRowSynced && !effectiveTab.isSpecialView && (
           <SheetRowDetail
             tab={effectiveTab}
             row={selectedRowSynced}
@@ -158,13 +181,13 @@ export default function PersonalProjectTabPage() {
             functionCodeOptions={registeredFunctionCodes}
             onClose={() => setSelectedRow(null)}
             onUpdate={async (updatedRow) => {
-              await updateSheetRowData(projectId, tabId, updatedRow as SheetRow);
+              await updateSheetRowData(projectId, resolvedTabId, updatedRow as SheetRow);
               setSelectedRow(null);
             }}
           />
         )}
 
-        {showAddRow && (
+        {showAddRow && !effectiveTab.isSpecialView && (
           <AddRowDrawer
             tab={effectiveTab}
             projectId={projectId}
@@ -175,14 +198,14 @@ export default function PersonalProjectTabPage() {
             functionCodeOptions={registeredFunctionCodes}
             onClose={() => setShowAddRow(false)}
             onSave={async (newRow) => {
-              await addSheetRow(projectId, tabId, newRow);
+              await addSheetRow(projectId, resolvedTabId, newRow);
               setShowAddRow(false);
             }}
           />
         )}
       </div>
 
-      {showExport && (
+      {showExport && !effectiveTab.isSpecialView && (
         <ExportModal tab={effectiveTab} rows={currentRows} onClose={() => setShowExport(false)} />
       )}
     </>

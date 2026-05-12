@@ -13,6 +13,8 @@ interface Props {
   language: Language;
   onLanguageChange: (lang: Language) => void;
   onExport: () => void;
+  /** Hide CSV/PDF export (e.g. special views with no sheet rows). */
+  showExport?: boolean;
 }
 
 export function Header({
@@ -23,6 +25,7 @@ export function Header({
   language,
   onLanguageChange,
   onExport,
+  showExport = true,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -75,13 +78,15 @@ export function Header({
             {language === 'en' ? 'EN' : 'JP'}
           </button>
 
-          <button
-            onClick={onExport}
-            className="flex items-center gap-2 px-4 py-2.5 bg-surface-800 border border-surface-700 rounded-lg text-gray-300 hover:text-white hover:border-surface-200 text-base font-medium transition-all"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
+          {showExport && (
+            <button
+              onClick={onExport}
+              className="flex items-center gap-2 px-4 py-2.5 bg-surface-800 border border-surface-700 rounded-lg text-gray-300 hover:text-white hover:border-surface-200 text-base font-medium transition-all"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+          )}
         </div>
       </div>
     </header>

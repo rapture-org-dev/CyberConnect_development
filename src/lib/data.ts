@@ -444,7 +444,7 @@ export function shouldRenderMergedBilingualBlock(tab: SheetTab, colKey: string):
   return !tab.columns.some((c) => c.key === jaKey);
 }
 
-/** Tab ids backed by DB sheet tables (excludes UI-only tabs like master_schedule). */
+/** Tab ids backed by DB sheet tables (excludes UI-only tabs like `schedule`). */
 export function getDataSheetTabIds(): string[] {
   return sheetTabs.filter((t) => !t.isSpecialView).map((t) => t.id);
 }
@@ -675,11 +675,11 @@ export const sheetTabs: SheetTab[] = [
     pmCanAddRows: true,
   },
   {
-    id: 'master_schedule',
-    name: 'Master Schedule',
-    nameJa: 'マスタースケジュール',
+    id: 'schedule',
+    name: 'Schedule Chart',
+    nameJa: 'スケジュールチャート',
     icon: 'Calendar',
-    visibleTo: ['admin', 'pm', 'client'],
+    visibleTo: ['admin', 'pm', 'dev', 'client'],
     columns: [],
     guestEditableColumns: [],
     pmCanAddRows: false,
