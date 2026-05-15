@@ -826,24 +826,74 @@ export async function upsertSheetRowsBatchAction(
   const teamPriv = await resolveTeamProjectPrivilegeForMutation(supabase, profileForPriv.id, projectId)
 
   if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
-    const savedRows: SheetRow[] = []
-    for (const row of deduped) {
-      const base = { ...row, project_id: projectId } as Record<string, unknown>
-      const cleanedData = sanitizeRowData(base, tableName)
-      const { data, error } = await supabase
-        .from(tableName)
-        .update({ status: cleanedData.status })
-        .eq('id', row.id)
-        .eq('project_id', projectId)
-        .select()
-        .single()
-      if (error) {
-        console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
-        throw mapUniqueViolationError(tableName, error)
-      }
-      if (data) savedRows.push(data as SheetRow)
-    }
     const order = new Map(deduped.map((r, i) => [r.id, i]))
+    const ids = deduped.map((r) => r.id).filter(isValidUUID)
+    if (ids.length === 0) return []
+
+    // Status-only bulk updates must not create new rows (dev/assignee role cannot insert).
+    const { data: existing } = await supabase
+      .from(tableName)
+      .select('id')
+      .eq('project_id', projectId)
+      .in('id', ids)
+
+    const existingIdSet = new Set((existing ?? []).map((r) => String((r as { id: string }).id)))
+    const missing = ids.filter((id) => !existingIdSet.has(id))
+    if (missing.length > 0) {
+      throw new Error(`Row(s) not found for status update: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}`)
+    }
+
+    const payloads: Record<string, unknown>[] = deduped
+      .filter((r) => isValidUUID(r.id))
+      .map((row) => {
+        const base = {
+          id: row.id,
+          project_id: projectId,
+          status: (row as Record<string, unknown>).status,
+        } as Record<string, unknown>
+        const cleaned = sanitizeRowData(base, tableName)
+        // Only include columns permitted for this role.
+        return { id: row.id, project_id: projectId, status: cleaned.status }
+      })
+
+    const savedRows: SheetRow[] = []
+    const upsertChunkOrBisect = async (chunk: Record<string, unknown>[]): Promise<void> => {
+      if (chunk.length === 0) return
+
+      const { data: batchData, error: batchError } = await supabase
+        .from(tableName)
+        .upsert(chunk, { onConflict: 'id' })
+        .select()
+
+      if (!batchError && batchData != null) {
+        const arr = Array.isArray(batchData) ? batchData : [batchData]
+        savedRows.push(...(arr as SheetRow[]))
+        return
+      }
+
+      if (chunk.length === 1) {
+        const { data, error } = await supabase
+          .from(tableName)
+          .upsert(chunk[0], { onConflict: 'id' })
+          .select()
+          .single()
+        if (error) {
+          console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
+          throw mapUniqueViolationError(tableName, error)
+        }
+        if (data) savedRows.push(data as SheetRow)
+        return
+      }
+
+      const mid = Math.floor(chunk.length / 2)
+      await upsertChunkOrBisect(chunk.slice(0, mid))
+      await upsertChunkOrBisect(chunk.slice(mid))
+    }
+
+    for (let i = 0; i < payloads.length; i += IMPORT_UPSERT_CHUNK_SIZE) {
+      await upsertChunkOrBisect(payloads.slice(i, i + IMPORT_UPSERT_CHUNK_SIZE))
+    }
+
     return [...savedRows].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
   }
 
