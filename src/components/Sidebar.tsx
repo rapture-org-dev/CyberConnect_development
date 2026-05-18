@@ -11,8 +11,9 @@ import {
   FlaskConical, Plug, ListTodo, GanttChart, Calendar, Building2, UserRound,
   ChevronDown, Check,
 } from 'lucide-react';
-import { getLocalizedProjectName, getLocalizedTabName, type Language } from '@/lib/data';
+import { getLocalizedProjectName, getLocalizedTabName, isTeamAdminOrOwner, isTeamBillingOwner, type Language } from '@/lib/data';
 import { WorkspaceInfoModal } from '@/components/WorkspaceInfoModal';
+import { useWorkspace } from '@/components/WorkspaceProvider';
 
 type WorkspaceScope = 'team' | 'personal';
 
@@ -70,6 +71,7 @@ export function Sidebar({
   onUpdateCurrentTeam,
   onRegenerateCurrentTeamInviteCode,
 }: Props) {
+  const { teamPool, setTeamMemberRole } = useWorkspace();
   const pathname = usePathname();
   const router = useRouter();
   const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
@@ -125,7 +127,10 @@ export function Sidebar({
         : membershipForSlug?.role === 'admin'
           ? 'Company Admin'
           : 'Team member';
-  const canSeeInviteCode = activeScope === 'team' && currentTeamMembership?.role === 'admin';
+  const canSeeInviteCode =
+    activeScope === 'team' && isTeamAdminOrOwner(user.id, currentTeamSlug, teamMemberships);
+  const canManageCompanyAdmins =
+    activeScope === 'team' && isTeamBillingOwner(user.id, currentTeamSlug, teamMemberships);
 
   // Handle outside click for dropdown
   useEffect(() => {
@@ -282,10 +287,14 @@ export function Sidebar({
         user={user}
         team={currentTeam ?? null}
         canSeeInviteCode={canSeeInviteCode}
+        canManageCompanyAdmins={canManageCompanyAdmins}
+        teamMembers={teamPool}
+        billingOwnerId={currentTeam?.owner_id ?? null}
         onClose={() => setShowWorkspaceInfoModal(false)}
         onSavePersonal={onUpdatePersonalProfile}
         onSaveTeam={onUpdateCurrentTeam}
         onRegenerateInvite={onRegenerateCurrentTeamInviteCode}
+        onSetTeamMemberRole={canManageCompanyAdmins ? setTeamMemberRole : undefined}
       />
 
       <nav className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">

@@ -19,7 +19,7 @@ import {
   type Language,
 } from '@/lib/data';
 import type { UserProfile, Project, SheetRow, SheetColumn, UserRole, TeamMembership } from '@/types';
-import { regenerateTeamInviteCodeAction, updateTeamAction } from '@/actions/teams';
+import { regenerateTeamInviteCodeAction, setTeamMemberRoleAction, updateTeamAction } from '@/actions/teams';
 import { clearLoginSessionStorage } from '@/lib/loginSession';
 
 interface WorkspaceContextType {
@@ -47,6 +47,7 @@ interface WorkspaceContextType {
   updateMyProfile: (updates: Partial<Pick<UserProfile, 'name' | 'department' | 'avatar_url'>>) => Promise<void>;
   updateCurrentTeam: (updates: { name?: string }) => Promise<void>;
   regenerateCurrentTeamInviteCode: () => Promise<string>;
+  setTeamMemberRole: (profileId: string, role: 'admin' | 'member') => Promise<void>;
   refreshSheetData: (projectId: string) => Promise<void>;
   /** Reload one tab only — does not toggle full-project sheet loading (use after batch import). */
   refreshSheetTab: (projectId: string, tabId: string) => Promise<void>;
@@ -473,6 +474,19 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     return code;
   }, [loggedInUser?.activeTeamSlug, teamMemberships]);
 
+  const setTeamMemberRole = useCallback(
+    async (profileId: string, role: 'admin' | 'member') => {
+      const team = teamMemberships.find(m => m.team?.slug === loggedInUser?.activeTeamSlug)?.team;
+      if (!team?.id) throw new Error('Current team not found');
+      await setTeamMemberRoleAction(team.id, profileId, role);
+      const members = await getTeamMembersAction(team.id);
+      setTeamPool(members);
+      const refreshed = await getMyTeamMembershipsAction();
+      setTeamMemberships(refreshed);
+    },
+    [loggedInUser?.activeTeamSlug, teamMemberships]
+  );
+
   const handleUpgrade = useCallback(async (teamName: string) => {
     if (!loggedInUser) return;
     const { loginAction } = await import('@/actions/auth');
@@ -793,6 +807,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     updateMyProfile,
     updateCurrentTeam,
     regenerateCurrentTeamInviteCode,
+    setTeamMemberRole,
     refreshSheetData,
     refreshSheetTab,
     getProjectById,

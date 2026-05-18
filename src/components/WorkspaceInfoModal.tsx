@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Team, UserProfile } from '@/types';
-import { X, Save, RefreshCw, Copy } from 'lucide-react';
+import { X, Save, RefreshCw, Copy, Shield, UserMinus } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -8,10 +8,14 @@ interface Props {
   user: UserProfile;
   team: Team | null;
   canSeeInviteCode: boolean;
+  canManageCompanyAdmins?: boolean;
+  teamMembers?: UserProfile[];
+  billingOwnerId?: string | null;
   onClose: () => void;
   onSavePersonal: (updates: { name: string; department: string }) => Promise<void>;
   onSaveTeam: (updates: { name: string }) => Promise<void>;
   onRegenerateInvite: () => Promise<string>;
+  onSetTeamMemberRole?: (profileId: string, role: 'admin' | 'member') => Promise<void>;
 }
 
 export function WorkspaceInfoModal({
@@ -20,16 +24,27 @@ export function WorkspaceInfoModal({
   user,
   team,
   canSeeInviteCode,
+  canManageCompanyAdmins = false,
+  teamMembers = [],
+  billingOwnerId = null,
   onClose,
   onSavePersonal,
   onSaveTeam,
   onRegenerateInvite,
+  onSetTeamMemberRole,
 }: Props) {
   const [name, setName] = useState('');
   const [department, setDepartment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState(team?.invite_code ?? '');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
+
+  const [roster, setRoster] = useState<UserProfile[]>(teamMembers);
+
+  useEffect(() => {
+    setRoster(teamMembers);
+  }, [teamMembers]);
 
   useEffect(() => {
     if (!open) return;
@@ -37,7 +52,8 @@ export function WorkspaceInfoModal({
     setDepartment(user.department ?? '');
     setInviteCode(team?.invite_code ?? '');
     setCopyStatus('idle');
-  }, [open, scope, user, team]);
+    setRoster(teamMembers);
+  }, [open, scope, user, team, teamMembers]);
 
   if (!open) return null;
 
@@ -164,7 +180,69 @@ export function WorkspaceInfoModal({
             </>
           ) : (
             <div className="rounded-xl border border-surface-700 bg-surface-800/60 p-4 text-sm text-gray-400">
-              Only the team administrator can view or regenerate the invite code.
+              Only the billing owner or a company admin can view or regenerate the invite code.
+            </div>
+          )}
+
+          {scope === 'team' && canManageCompanyAdmins && onSetTeamMemberRole && (
+            <div className="space-y-2">
+              <label className="block text-xs text-gray-500">Company roles</label>
+              <p className="text-[10px] text-gray-500">
+                Billing owner → company admin → member. Only you (billing owner) can promote or demote company admins.
+              </p>
+              <ul className="max-h-48 overflow-y-auto rounded-xl border border-surface-700 divide-y divide-surface-800">
+                {roster
+                  .filter(m => m.id !== billingOwnerId)
+                  .map(member => {
+                    const isAdmin = member.team_role === 'admin';
+                    const busy = roleUpdatingId === member.id;
+                    return (
+                      <li key={member.id} className="flex items-center justify-between gap-2 px-3 py-2.5 bg-surface-800/40">
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-200 truncate">{member.name || member.email}</p>
+                          <p className="text-[10px] text-gray-500 truncate">{member.email}</p>
+                        </div>
+                        <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0">
+                          {isAdmin ? 'Admin' : 'Member'}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={async () => {
+                            setRoleUpdatingId(member.id);
+                            const nextRole = isAdmin ? 'member' : 'admin';
+                            try {
+                              await onSetTeamMemberRole(member.id, nextRole);
+                              setRoster(prev =>
+                                prev.map(m =>
+                                  m.id === member.id ? { ...m, team_role: nextRole } : m
+                                )
+                              );
+                            } catch (err: unknown) {
+                              const msg = err instanceof Error ? err.message : 'Failed to update role';
+                              alert(msg);
+                            } finally {
+                              setRoleUpdatingId(null);
+                            }
+                          }}
+                          className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-surface-600 text-gray-300 hover:text-white hover:border-brand-500/40 disabled:opacity-50"
+                        >
+                          {isAdmin ? (
+                            <>
+                              <UserMinus className="w-3 h-3" aria-hidden />
+                              Demote
+                            </>
+                          ) : (
+                            <>
+                              <Shield className="w-3 h-3" aria-hidden />
+                              Make admin
+                            </>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
             </div>
           )}
 

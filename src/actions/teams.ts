@@ -1,8 +1,52 @@
 'use server'
 
 import { createClient } from '@/lib/supabase-server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSession } from './auth'
 import { revalidatePath } from 'next/cache'
+
+async function getActorProfileId(supabase: SupabaseClient, email: string): Promise<string> {
+  const { data: profile } = await supabase.from('profiles').select('id').eq('email', email).single()
+  if (!profile?.id) throw new Error('Unauthorized')
+  return profile.id
+}
+
+/** Company admin or billing owner may update team settings and invite codes. */
+async function assertTeamAdminOrOwner(
+  supabase: SupabaseClient,
+  actorId: string,
+  teamId: string
+): Promise<{ owner_id: string | null }> {
+  const { data: team } = await supabase.from('teams').select('owner_id').eq('id', teamId).single()
+  if (!team) throw new Error('Team not found')
+  if (team.owner_id === actorId) return team
+
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', actorId).maybeSingle()
+  if (profile?.role === 'admin') return team
+
+  const { data: tm } = await supabase
+    .from('team_members')
+    .select('role')
+    .eq('team_id', teamId)
+    .eq('profile_id', actorId)
+    .maybeSingle()
+  if (tm?.role === 'admin') return team
+
+  throw new Error('Forbidden: Only the billing owner or a company admin can manage this team')
+}
+
+async function assertTeamBillingOwner(
+  supabase: SupabaseClient,
+  actorId: string,
+  teamId: string
+): Promise<{ owner_id: string | null }> {
+  const { data: team } = await supabase.from('teams').select('owner_id').eq('id', teamId).single()
+  if (!team) throw new Error('Team not found')
+  if (team.owner_id !== actorId) {
+    throw new Error('Forbidden: Only the billing owner can change company admin roles')
+  }
+  return team
+}
 
 function generateInviteCode(): string {
   return `TEAM-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -131,6 +175,9 @@ export async function updateTeamAction(teamId: string, updates: { name?: string 
   if (!session) throw new Error('Unauthorized')
 
   const supabase = await createClient()
+  const actorId = await getActorProfileId(supabase, session.email)
+  await assertTeamAdminOrOwner(supabase, actorId, teamId)
+
   const payload: Record<string, string> = {}
   if (typeof updates.name === 'string') payload.name = updates.name.trim()
 
@@ -147,8 +194,14 @@ export async function updateTeamAction(teamId: string, updates: { name?: string 
 }
 
 export async function regenerateTeamInviteCodeAction(teamId: string): Promise<string> {
-  const nextCode = generateInviteCode()
+  const session = await getSession()
+  if (!session) throw new Error('Unauthorized')
+
   const supabase = await createClient()
+  const actorId = await getActorProfileId(supabase, session.email)
+  await assertTeamAdminOrOwner(supabase, actorId, teamId)
+
+  const nextCode = generateInviteCode()
   const { error } = await supabase
     .from('teams')
     .update({ invite_code: nextCode })
@@ -157,6 +210,55 @@ export async function regenerateTeamInviteCodeAction(teamId: string): Promise<st
   if (error) throw error
   revalidatePath('/')
   return nextCode
+}
+
+export async function setTeamMemberRoleAction(
+  teamId: string,
+  profileId: string,
+  role: 'admin' | 'member'
+): Promise<void> {
+  const session = await getSession()
+  if (!session) throw new Error('Unauthorized')
+
+  const supabase = await createClient()
+  const actorId = await getActorProfileId(supabase, session.email)
+  const team = await assertTeamBillingOwner(supabase, actorId, teamId)
+
+  if (profileId === team.owner_id) {
+    throw new Error('Cannot change the billing owner team role')
+  }
+  if (role !== 'admin' && role !== 'member') {
+    throw new Error('Invalid role')
+  }
+
+  const { error: rpcError } = await supabase.rpc('set_team_member_role', {
+    p_team_id: teamId,
+    p_profile_id: profileId,
+    p_role: role,
+  })
+
+  if (rpcError) {
+    const msg = rpcError.message || ''
+    if (msg.includes('Could not find the function') || rpcError.code === 'PGRST202') {
+      const { data: updated, error: directError } = await supabase
+        .from('team_members')
+        .update({ role })
+        .eq('team_id', teamId)
+        .eq('profile_id', profileId)
+        .select('profile_id')
+
+      if (directError) throw directError
+      if (!updated?.length) {
+        throw new Error(
+          'Role was not updated. Run database/migrate_set_team_member_role.sql in Supabase SQL editor, then try again.'
+        )
+      }
+    } else {
+      throw new Error(rpcError.message)
+    }
+  }
+
+  revalidatePath('/')
 }
 
 export async function joinTeamByInviteCodeAction(code: string): Promise<{ success: boolean; teamSlug?: string; teamName?: string; error?: string }> {

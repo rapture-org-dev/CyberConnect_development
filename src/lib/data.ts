@@ -20,8 +20,20 @@ export function isTeamAdminOrOwner(
   if (!userId || !teamSlug) return false;
   const m = teamMemberships.find(x => x.team?.slug === teamSlug);
   if (!m?.team) return false;
+  if (m.team.owner_id === userId) return true;
   if (m.role === 'admin') return true;
-  return m.team.owner_id === userId;
+  return false;
+}
+
+/** Billing owner for the team (may manage company admins; distinct from team_members.role admin). */
+export function isTeamBillingOwner(
+  userId: string | undefined,
+  teamSlug: string | undefined,
+  teamMemberships: TeamMembership[]
+): boolean {
+  if (!userId || !teamSlug) return false;
+  const m = teamMemberships.find(x => x.team?.slug === teamSlug);
+  return m?.team?.owner_id === userId;
 }
 
 /** Team project: user may edit sheets / PM workflow if admin/owner or assigned PM or Dev on this project. */
