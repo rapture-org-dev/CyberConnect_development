@@ -1,40 +1,41 @@
-# CyberConnect database SQL
+# CyberConnect database (clone a Supabase project)
 
-## Copy-paste bundles (new Supabase project)
+Use **two files** only. Run in the Supabase SQL Editor with role **postgres** (not `authenticated`).
 
-| File | Purpose |
-|------|---------|
-| **`cyberconnect_full_schema_paste.sql`** | Tables, enums, sheet RBAC triggers, team RPCs. **No RLS.** Run first as `postgres`. (Single `.sql` file; no `.txt` duplicate.) |
-| **`cyberconnect_rls_policies_paste.sql`** | RLS helper functions, prod policies, signup profile trigger. Run second as `postgres`. |
+| Order | File | Contents |
+|------:|------|----------|
+| 1 | [`cyberconnect_schema.sql`](./cyberconnect_schema.sql) | Extensions, enums, tables, indexes, RBAC sheet triggers, RPCs (`get_team_member_profiles`, `set_team_member_role`, …). **No RLS.** |
+| 2 | [`cyberconnect_rls.sql`](./cyberconnect_rls.sql) | Sign-up profile trigger, RLS helper functions, production RLS policies (127 policies). |
 
-Dashboard: turn off **Confirm email** (Auth → Email) on staging if you match production.
+## New project checklist
 
-## Per-table source files (edit here, then refresh paste bundles when needed)
+1. Create Supabase project (Auth enabled).
+2. **Authentication → Providers → Email**: turn **Confirm email** off if you want instant login on staging/dev.
+3. Paste and run **`cyberconnect_schema.sql`** (entire file, top to bottom).
+4. Paste and run **`cyberconnect_rls.sql`** (entire file).
+5. In the app, set `NEXT_PUBLIC_SUPABASE_URL` and anon key to this project; sign out/in after RLS changes.
 
-**Core**
+## Re-applying RLS on an existing DB
 
-- `profiles.sql`, `teams.sql`, `team_members.sql`, `projects.sql`, `project_members.sql`
-- `invitations.sql`, `code_sequences.sql`, `project_sheet_column_layouts.sql`
+Policies are idempotent (`DROP POLICY IF EXISTS` then `CREATE`). You can re-run **`cyberconnect_rls.sql`** alone after schema exists. If you have conflicting custom policies, drop all public policies first:
 
-**Sheet row tables**
+```sql
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT schemaname, tablename, policyname FROM pg_policies WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', r.policyname, r.schemaname, r.tablename);
+  END LOOP;
+END $$;
+```
 
-- `purpose_rows.sql`, `tech_stack_rows.sql`, `non_func_rows.sql`, `screen_list_rows.sql`
-- `function_list_rows.sql`, `task_rows.sql`, `test_case_rows.sql`, `api_list_rows.sql`
-- `backlog_rows.sql`, `process_chart_rows.sql`, `app_list_rows.sql`
+Then run **`cyberconnect_rls.sql`**.
 
-**Enums / column patches**
+## Older / incremental files
 
-- `task_status_add_in_review.sql`, `screen_status_add_in_review.sql`, `function_status_add_in_review.sql`
-- `phase_type_add_actual_performance.sql`
+Previous per-table SQL, staging hotfixes, and export snippets live under [`archive/`](./archive/) for history only. Do not use them for a fresh clone.
 
-**Logic (not a single table)**
+## Production enum note
 
-- `rbac_sheet_triggers.sql` — sheet row RBAC trigger functions
-- `get_team_member_profiles.sql` — team roster RPC
-- `migrate_set_team_member_role.sql` — billing-owner changes company admin role
-
-The full schema paste also embeds bootstrap SQL, `01_teams_owner_fk`, and migrations for bilingual columns / sheet layout table (see `FILE:` markers inside the paste file).
-
-## Re-exporting RLS from production later
-
-If production policies change, re-export from prod and replace the body of `cyberconnect_rls_policies_paste.sql` (helpers + `DROP`/`CREATE POLICY` statements). Keep the signup trigger block at the top unless prod adds its own.
+RLS policies from production may reference `user_role` labels like `administrator` and `developer`. The schema bundle defines `('admin', 'pm', 'dev', 'client')`. If policy creation fails on enum cast, align `public.user_role` with production (or re-export policies after enums match).

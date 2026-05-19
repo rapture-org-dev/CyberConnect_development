@@ -1,0 +1,409 @@
+-- =============================================================================
+-- CyberConnect — core Row Level Security for staging (and fresh DBs)
+-- =============================================================================
+-- Run in Supabase SQL Editor with Role = **postgres** (not authenticated).
+-- Run AFTER:
+--   - database/cyberconnect_full_schema_paste.txt (or equivalent schema)
+--   - database/migrate_profiles_on_auth_user_created.sql
+--   - database/migrate_profiles_signup_rls.sql
+--   - database/migrate_project_sheet_column_layouts_rls.sql (sheet column layouts)
+--   - database/rbac_sheet_triggers.sql (sheet row triggers)
+--   - database/get_team_member_profiles.sql
+--   - database/migrate_set_team_member_role.sql
+--
+-- Fixes errors like:
+--   "new row violates row-level security policy for table teams"
+-- when using Upgrade to Team / purchaseTeamPlanAction.
+-- =============================================================================
+
+-- ---------- Helpers (SECURITY DEFINER; used by policies) ----------
+
+CREATE OR REPLACE FUNCTION public.auth_uid_profile_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    (SELECT p.id FROM public.profiles p WHERE p.id = auth.uid() LIMIT 1),
+    (
+      SELECT p.id
+      FROM public.profiles p
+      INNER JOIN auth.users u ON lower(u.email) = lower(p.email)
+      WHERE u.id = auth.uid()
+      LIMIT 1
+    )
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.auth_uid_profile_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auth_uid_profile_id() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_member_of_team(p_team_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.team_members tm
+    WHERE tm.team_id = p_team_id
+      AND tm.profile_id = public.auth_uid_profile_id()
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_member_of_team(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_member_of_team(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.auth_user_can_access_project(p_project_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.projects p
+    WHERE p.id = p_project_id
+      AND (
+        (p.workspace_type = 'personal' AND p.owner_id = public.auth_uid_profile_id())
+        OR (
+          p.workspace_type = 'team'
+          AND p.team_id IS NOT NULL
+          AND public.is_member_of_team(p.team_id)
+        )
+      )
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.auth_user_can_access_project(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auth_user_can_access_project(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.auth_user_can_manage_team(p_team_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.teams t
+    WHERE t.id = p_team_id
+      AND (
+        t.owner_id = public.auth_uid_profile_id()
+        OR EXISTS (
+          SELECT 1
+          FROM public.team_members tm
+          WHERE tm.team_id = p_team_id
+            AND tm.profile_id = public.auth_uid_profile_id()
+            AND tm.role = 'admin'::public.team_roles
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM public.profiles pr
+          WHERE pr.id = public.auth_uid_profile_id()
+            AND pr.role::text = 'admin'
+        )
+      )
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.auth_user_can_manage_team(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auth_user_can_manage_team(uuid) TO authenticated;
+
+-- ---------- RPCs used by the app (often present on prod, missing on new staging) ----------
+
+CREATE OR REPLACE FUNCTION public.is_team_owner(user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.teams t
+    WHERE t.owner_id = user_id
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_team_owner(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_team_owner(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.join_team_by_invite_code(p_invite_code text)
+RETURNS TABLE (
+  success boolean,
+  error text,
+  team_slug text,
+  team_name text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller uuid;
+  tid uuid;
+  tslug text;
+  tname text;
+  norm text;
+BEGIN
+  norm := upper(trim(coalesce(p_invite_code, '')));
+  IF norm = '' THEN
+    RETURN QUERY SELECT false, 'Invite code is required', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  caller := public.auth_uid_profile_id();
+  IF caller IS NULL THEN
+    RETURN QUERY SELECT false, 'Not authenticated', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT t.id, t.slug, t.name
+  INTO tid, tslug, tname
+  FROM public.teams t
+  WHERE upper(trim(coalesce(t.invite_code, ''))) = norm
+  LIMIT 1;
+
+  IF tid IS NULL THEN
+    RETURN QUERY SELECT false, 'Invalid invite code', NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.team_members tm
+    WHERE tm.team_id = tid AND tm.profile_id = caller
+  ) THEN
+    RETURN QUERY SELECT true, NULL::text, tslug, tname;
+    RETURN;
+  END IF;
+
+  INSERT INTO public.team_members (team_id, profile_id, role)
+  VALUES (tid, caller, 'member'::public.team_roles);
+
+  RETURN QUERY SELECT true, NULL::text, tslug, tname;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN QUERY SELECT false, SQLERRM, NULL::text, NULL::text;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.join_team_by_invite_code(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.join_team_by_invite_code(text) TO authenticated;
+
+-- ---------- teams ----------
+
+ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS teams_select_member_or_owner ON public.teams;
+CREATE POLICY teams_select_member_or_owner
+  ON public.teams
+  FOR SELECT
+  TO authenticated
+  USING (
+    owner_id = public.auth_uid_profile_id()
+    OR public.is_member_of_team(id)
+  );
+
+DROP POLICY IF EXISTS teams_insert_as_owner ON public.teams;
+CREATE POLICY teams_insert_as_owner
+  ON public.teams
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (owner_id = public.auth_uid_profile_id());
+
+DROP POLICY IF EXISTS teams_update_admin_or_owner ON public.teams;
+CREATE POLICY teams_update_admin_or_owner
+  ON public.teams
+  FOR UPDATE
+  TO authenticated
+  USING (public.auth_user_can_manage_team(id))
+  WITH CHECK (public.auth_user_can_manage_team(id));
+
+-- ---------- team_members ----------
+
+ALTER TABLE public.team_members ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS team_members_select_same_team ON public.team_members;
+CREATE POLICY team_members_select_same_team
+  ON public.team_members
+  FOR SELECT
+  TO authenticated
+  USING (public.is_member_of_team(team_id));
+
+DROP POLICY IF EXISTS team_members_insert_self_when_owner ON public.team_members;
+CREATE POLICY team_members_insert_self_when_owner
+  ON public.team_members
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    profile_id = public.auth_uid_profile_id()
+    AND EXISTS (
+      SELECT 1
+      FROM public.teams t
+      WHERE t.id = team_id
+        AND t.owner_id = public.auth_uid_profile_id()
+    )
+  );
+
+-- Billing owner may remove members via app (optional direct delete)
+DROP POLICY IF EXISTS team_members_delete_owner ON public.team_members;
+CREATE POLICY team_members_delete_owner
+  ON public.team_members
+  FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.teams t
+      WHERE t.id = team_id
+        AND t.owner_id = public.auth_uid_profile_id()
+    )
+  );
+
+-- ---------- projects ----------
+
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS projects_select_access ON public.projects;
+CREATE POLICY projects_select_access
+  ON public.projects
+  FOR SELECT
+  TO authenticated
+  USING (public.auth_user_can_access_project(id));
+
+DROP POLICY IF EXISTS projects_insert_access ON public.projects;
+CREATE POLICY projects_insert_access
+  ON public.projects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    auth.uid() IS NOT NULL
+    AND owner_id = auth.uid()
+    AND (
+      (
+        workspace_type::text = 'personal'
+        AND team_id IS NULL
+      )
+      OR (
+        workspace_type::text = 'team'
+        AND team_id IS NOT NULL
+        AND (
+          public.is_member_of_team(team_id)
+          OR EXISTS (
+            SELECT 1
+            FROM public.teams t
+            WHERE t.id = team_id
+              AND t.owner_id = auth.uid()
+          )
+        )
+      )
+    )
+  );
+
+DROP POLICY IF EXISTS projects_update_access ON public.projects;
+CREATE POLICY projects_update_access
+  ON public.projects
+  FOR UPDATE
+  TO authenticated
+  USING (public.auth_user_can_access_project(id))
+  WITH CHECK (public.auth_user_can_access_project(id));
+
+DROP POLICY IF EXISTS projects_delete_access ON public.projects;
+CREATE POLICY projects_delete_access
+  ON public.projects
+  FOR DELETE
+  TO authenticated
+  USING (public.auth_user_can_access_project(id));
+
+-- ---------- project_members ----------
+
+ALTER TABLE public.project_members ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS project_members_select_access ON public.project_members;
+CREATE POLICY project_members_select_access
+  ON public.project_members
+  FOR SELECT
+  TO authenticated
+  USING (public.auth_user_can_access_project(project_id));
+
+DROP POLICY IF EXISTS project_members_write_access ON public.project_members;
+CREATE POLICY project_members_write_access
+  ON public.project_members
+  FOR ALL
+  TO authenticated
+  USING (public.auth_user_can_access_project(project_id))
+  WITH CHECK (public.auth_user_can_access_project(project_id));
+
+-- ---------- code_sequences (task codes, etc.) ----------
+
+DO $$
+BEGIN
+  IF to_regclass('public.code_sequences') IS NOT NULL THEN
+    ALTER TABLE public.code_sequences ENABLE ROW LEVEL SECURITY;
+
+    DROP POLICY IF EXISTS code_sequences_access ON public.code_sequences;
+    CREATE POLICY code_sequences_access
+      ON public.code_sequences
+      FOR ALL
+      TO authenticated
+      USING (public.auth_user_can_access_project(project_id))
+      WITH CHECK (public.auth_user_can_access_project(project_id));
+  ELSE
+    RAISE NOTICE 'Skipping public.code_sequences (table not found).';
+  END IF;
+END $$;
+
+-- ---------- Sheet row tables (read/write for project members; RBAC triggers enforce roles) ----------
+
+DO $$
+DECLARE
+  sheet_table text;
+BEGIN
+  FOREACH sheet_table IN ARRAY ARRAY[
+    'purpose_rows',
+    'tech_stack_rows',
+    'non_func_rows',
+    'screen_list_rows',
+    'function_list_rows',
+    'task_rows',
+    'test_case_rows',
+    'api_list_rows',
+    'backlog_rows',
+    'process_chart_rows',
+    'app_list_rows'
+  ]
+  LOOP
+    IF to_regclass('public.' || sheet_table) IS NULL THEN
+      RAISE NOTICE 'Skipping missing sheet table public.%', sheet_table;
+      CONTINUE;
+    END IF;
+
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', sheet_table);
+
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', sheet_table || '_member_access', sheet_table);
+    EXECUTE format(
+      $pol$
+      CREATE POLICY %I
+        ON public.%I
+        FOR ALL
+        TO authenticated
+        USING (public.auth_user_can_access_project(project_id))
+        WITH CHECK (public.auth_user_can_access_project(project_id))
+      $pol$,
+      sheet_table || '_member_access',
+      sheet_table
+    );
+  END LOOP;
+END $$;
+
+-- =============================================================================
+-- Done. Test: Upgrade to Team on staging, then create a team project and open a sheet.
+-- =============================================================================
