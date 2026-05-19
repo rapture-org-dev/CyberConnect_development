@@ -19,6 +19,7 @@ create table public.api_list_rows (
   remarks_ja text not null default ''::text,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
   constraint api_list_rows_pkey primary key (id),
   constraint api_list_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
 ) TABLESPACE pg_default;

@@ -21,7 +21,7 @@ create table public.projects (
   team_id uuid null,
   constraint projects_pkey primary key (id),
   constraint projects_client_id_fkey foreign KEY (client_id) references profiles (id) on delete set null,
-  constraint projects_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete restrict,
+  constraint projects_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete set null,
   constraint projects_pm_id_fkey foreign KEY (pm_id) references profiles (id) on delete set null,
   constraint projects_team_id_fkey foreign KEY (team_id) references teams (id),
   constraint check_project_isolation check (

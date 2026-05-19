@@ -4,7 +4,6 @@ create table public.function_list_rows (
   sort_order integer not null default 0,
   function_code text not null default ''::text,
   phase public.phase_type null,
-  phase_ja text not null default ''::text,
   user_category text not null default ''::text,
   user_category_ja text not null default ''::text,
   main_category text not null default ''::text,
@@ -19,7 +18,6 @@ create table public.function_list_rows (
   function_details text not null default ''::text,
   function_details_ja text not null default ''::text,
   effort text not null default ''::text,
-  effort_ja text not null default ''::text,
   status public.function_status null default 'Need to be checked'::function_status,
   completion_dev public.check_status null default ''::check_status,
   completion_client public.check_status null default ''::check_status,
@@ -27,6 +25,9 @@ create table public.function_list_rows (
   remarks_ja text not null default ''::text,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  phase_ja text not null default ''::text,
+  effort_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
   constraint function_list_rows_pkey primary key (id),
   constraint function_list_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
 ) TABLESPACE pg_default;

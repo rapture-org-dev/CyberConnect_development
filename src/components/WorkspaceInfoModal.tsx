@@ -12,7 +12,7 @@ interface Props {
   teamMembers?: UserProfile[];
   billingOwnerId?: string | null;
   onClose: () => void;
-  onSavePersonal: (updates: { name: string; department: string }) => Promise<void>;
+  onSavePersonal: (updates: { name: string }) => Promise<void>;
   onSaveTeam: (updates: { name: string }) => Promise<void>;
   onRegenerateInvite: () => Promise<string>;
   onSetTeamMemberRole?: (profileId: string, role: 'admin' | 'member') => Promise<void>;
@@ -34,7 +34,6 @@ export function WorkspaceInfoModal({
   onSetTeamMemberRole,
 }: Props) {
   const [name, setName] = useState('');
-  const [department, setDepartment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState(team?.invite_code ?? '');
@@ -49,7 +48,6 @@ export function WorkspaceInfoModal({
   useEffect(() => {
     if (!open) return;
     setName(scope === 'personal' ? user.name : team?.name ?? '');
-    setDepartment(user.department ?? '');
     setInviteCode(team?.invite_code ?? '');
     setCopyStatus('idle');
     setRoster(teamMembers);
@@ -73,7 +71,7 @@ export function WorkspaceInfoModal({
     setIsSaving(true);
     try {
       if (scope === 'personal') {
-        await onSavePersonal({ name, department });
+        await onSavePersonal({ name });
       } else {
         await onSaveTeam({ name });
       }
@@ -122,15 +120,6 @@ export function WorkspaceInfoModal({
                   value={user.email}
                   disabled
                   className="w-full bg-surface-800 border border-surface-700 rounded-xl px-4 py-3 text-gray-400"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1.5">Department</label>
-                <input
-                  value={department}
-                  onChange={e => setDepartment(e.target.value)}
-                  className="w-full bg-surface-800 border border-surface-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-brand-500/40"
-                  placeholder="Engineering"
                 />
               </div>
             </>

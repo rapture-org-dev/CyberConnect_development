@@ -12,7 +12,6 @@ create table public.screen_list_rows (
   screen_name text not null default ''::text,
   screen_name_ja text not null default ''::text,
   path text not null default ''::text,
-  path_ja text not null default ''::text,
   overview text not null default ''::text,
   overview_ja text not null default ''::text,
   status public.screen_status null default 'Not started'::screen_status,
@@ -22,6 +21,8 @@ create table public.screen_list_rows (
   remarks_ja text not null default ''::text,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  path_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
   constraint screen_list_rows_pkey primary key (id),
   constraint screen_list_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
 ) TABLESPACE pg_default;

@@ -12,6 +12,7 @@ create table public.backlog_rows (
   sprint text not null default ''::text,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
   constraint backlog_rows_pkey primary key (id),
   constraint backlog_rows_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete set null,
   constraint backlog_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE

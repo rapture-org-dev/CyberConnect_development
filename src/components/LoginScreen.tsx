@@ -40,6 +40,17 @@ function LoginScreenContent({ onLogin }: Props) {
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState('');
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '(missing)';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+    console.info('[CyberConnect] Supabase URL in this dev build:', url);
+    console.info(
+      '[CyberConnect] Anon key prefix:',
+      key ? `${key.slice(0, 20)}… (len ${key.length})` : '(missing)'
+    );
+  }, []);
+
   useLayoutEffect(() => {
     const snap = peekResumeRoleSnapshot();
     if (snap.goRole && snap.email) {
@@ -114,13 +125,28 @@ function LoginScreenContent({ onLogin }: Props) {
     setAuthError('');
 
     try {
+      const email = loginEmail.trim().toLowerCase();
       const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
+        email,
         password: loginPassword,
       });
 
       if (authError || !user) {
-        setAuthError(authError?.message || 'Failed to sign in.');
+        const msg = authError?.message || 'Failed to sign in.';
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[CyberConnect] signInWithPassword failed', {
+            message: authError?.message,
+            code: (authError as { code?: string })?.code,
+            status: (authError as { status?: number })?.status,
+          });
+        }
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          setAuthError(
+            'Invalid email or password. On localhost: confirm DevTools → Network shows the same supabase.co host as Vercel, restart dev after .env changes, and re-type the password (not autofill).'
+          );
+        } else {
+          setAuthError(msg);
+        }
         setAuthenticating(false);
         return;
       }
@@ -166,8 +192,9 @@ function LoginScreenContent({ onLogin }: Props) {
     setAuthenticating(true);
 
     try {
+      const signupEmailNorm = signupEmail.trim().toLowerCase();
       const { data: { user }, error: signUpError } = await supabase.auth.signUp({
-        email: signupEmail,
+        email: signupEmailNorm,
         password: signupPassword,
         options: {
           data: {
@@ -178,6 +205,40 @@ function LoginScreenContent({ onLogin }: Props) {
 
       if (signUpError || !user) {
         setAuthError(signUpError?.message || 'Failed to create account.');
+        setAuthenticating(false);
+        return;
+      }
+
+      const displayName = signupName.trim() || signupEmailNorm.split('@')[0] || 'User';
+      const profilePayload = {
+        id: user.id,
+        email: signupEmailNorm,
+        name: displayName,
+        role: 'client' as const,
+      };
+
+      const { error: profileUpsertError } = await supabase
+        .from('profiles')
+        .upsert(profilePayload, { onConflict: 'id' });
+
+      if (profileUpsertError) {
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (existingProfile) {
+          setAuthenticating(false);
+          setAuthError('Account created! You can now sign in.');
+          setFlow('signin');
+          return;
+        }
+
+        console.error('Profile upsert after signup:', profileUpsertError);
+        setAuthError(
+          `Account created in Auth, but profile row failed: ${profileUpsertError.message}. Check Supabase RLS or create the profile manually.`
+        );
         setAuthenticating(false);
         return;
       }

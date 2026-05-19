@@ -33,7 +33,7 @@ interface Props {
   getTabRowCount: (tabId: string) => number;
   showAdminDashboard: boolean;
   language: Language;
-  onUpdatePersonalProfile: (updates: { name: string; department: string }) => Promise<void>;
+  onUpdatePersonalProfile: (updates: { name: string }) => Promise<void>;
   onUpdateCurrentTeam: (updates: { name?: string }) => Promise<void>;
   onRegenerateCurrentTeamInviteCode: () => Promise<string>;
 }
