@@ -1,4 +1,10 @@
-﻿-- ================================================================================
+-- ================================================================================
+-- CyberConnect - FULL DATABASE SCHEMA (tables, RBAC triggers, RPCs) — NO RLS
+-- Supabase SQL Editor · Role = postgres · run top to bottom.
+-- Then run: cyberconnect_rls_policies_paste.sql
+-- ================================================================================
+
+-- ================================================================================
 -- CyberConnect - full SQL bundle for a new Supabase / Postgres database
 -- Generated from repository database/*.sql
 -- ================================================================================
@@ -1302,139 +1308,6 @@ CREATE TRIGGER trg_rbac_task_rows
   EXECUTE FUNCTION public.enforce_task_row_rbac ();
 
 
--- ########## FILE: migrate_project_sheet_column_layouts_rls.sql ##########
-
--- Row Level Security for project_sheet_column_layouts.
--- Run AFTER database/migrate_sheet_column_layouts_and_extras.sql (table must exist).
--- Safe to re-run (drops and recreates policies).
-
-ALTER TABLE public.project_sheet_column_layouts ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "project_sheet_column_layouts_select_authenticated"
-  ON public.project_sheet_column_layouts;
-DROP POLICY IF EXISTS "project_sheet_column_layouts_modify_authenticated"
-  ON public.project_sheet_column_layouts;
-
--- Read: personal owner, or any member of the project's team.
-CREATE POLICY "project_sheet_column_layouts_select_authenticated"
-  ON public.project_sheet_column_layouts
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1
-      FROM public.projects p
-      WHERE p.id = project_sheet_column_layouts.project_id
-        AND (
-          (p.workspace_type = 'personal' AND p.owner_id = (SELECT auth.uid()))
-          OR (
-            p.workspace_type = 'team'
-            AND p.team_id IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-              FROM public.team_members tm
-              WHERE tm.team_id = p.team_id
-                AND tm.profile_id = (SELECT auth.uid())
-            )
-          )
-        )
-    )
-  );
-
--- Write: matches server-side canUpdateTeamProjectMetadata (personal owner; team admin/owner/platform admin; project PM).
-CREATE POLICY "project_sheet_column_layouts_modify_authenticated"
-  ON public.project_sheet_column_layouts
-  FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1
-      FROM public.projects p
-      WHERE p.id = project_sheet_column_layouts.project_id
-        AND (
-          (p.workspace_type = 'personal' AND p.owner_id = (SELECT auth.uid()))
-          OR (
-            p.workspace_type = 'team'
-            AND p.team_id IS NOT NULL
-            AND (
-              EXISTS (
-                SELECT 1
-                FROM public.profiles pr
-                WHERE pr.id = (SELECT auth.uid())
-                  -- Compare as text so Postgres does not cast 'admin' to user_role (your enum may not list 'admin').
-                  AND pr.role::text = 'admin'
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM public.teams t
-                WHERE t.id = p.team_id
-                  AND t.owner_id = (SELECT auth.uid())
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM public.team_members tm
-                WHERE tm.team_id = p.team_id
-                  AND tm.profile_id = (SELECT auth.uid())
-                  AND tm.role = 'admin'::public.team_roles
-              )
-              OR p.pm_id = (SELECT auth.uid())
-              OR EXISTS (
-                SELECT 1
-                FROM public.project_members pm
-                WHERE pm.project_id = p.id
-                  AND pm.profile_id = (SELECT auth.uid())
-                  AND pm.workspace_role = 'pm'::public.workspace_roles
-              )
-            )
-          )
-        )
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.projects p
-      WHERE p.id = project_sheet_column_layouts.project_id
-        AND (
-          (p.workspace_type = 'personal' AND p.owner_id = (SELECT auth.uid()))
-          OR (
-            p.workspace_type = 'team'
-            AND p.team_id IS NOT NULL
-            AND (
-              EXISTS (
-                SELECT 1
-                FROM public.profiles pr
-                WHERE pr.id = (SELECT auth.uid())
-                  -- Compare as text so Postgres does not cast 'admin' to user_role (your enum may not list 'admin').
-                  AND pr.role::text = 'admin'
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM public.teams t
-                WHERE t.id = p.team_id
-                  AND t.owner_id = (SELECT auth.uid())
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM public.team_members tm
-                WHERE tm.team_id = p.team_id
-                  AND tm.profile_id = (SELECT auth.uid())
-                  AND tm.role = 'admin'::public.team_roles
-              )
-              OR p.pm_id = (SELECT auth.uid())
-              OR EXISTS (
-                SELECT 1
-                FROM public.project_members pm
-                WHERE pm.project_id = p.id
-                  AND pm.profile_id = (SELECT auth.uid())
-                  AND pm.workspace_role = 'pm'::public.workspace_roles
-              )
-            )
-          )
-        )
-    )
-  );
-
 
 -- ########## FILE: get_team_member_profiles.sql ##########
 
@@ -1509,7 +1382,6 @@ $$;
 revoke all on function public.get_team_member_profiles(uuid) from public;
 grant execute on function public.get_team_member_profiles(uuid) to authenticated;
 
-
 -- ########## FILE: migrate_set_team_member_role.sql ##########
 
 -- Billing owner may promote/demote company admins (team_members.role).
@@ -1582,32 +1454,3 @@ $$;
 
 revoke all on function public.set_team_member_role(uuid, uuid, public.team_roles) from public;
 grant execute on function public.set_team_member_role(uuid, uuid, public.team_roles) to authenticated;
-
-
--- ########## FILE: migrate_profiles_signup_rls.sql ##########
-
--- Allow new sign-ups to create and read their own profiles row (id = auth.uid()).
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS profiles_insert_own ON public.profiles;
-CREATE POLICY profiles_insert_own
-  ON public.profiles
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (id = auth.uid());
-
-DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
-CREATE POLICY profiles_select_own
-  ON public.profiles
-  FOR SELECT
-  TO authenticated
-  USING (id = auth.uid());
-
-DROP POLICY IF EXISTS profiles_update_own ON public.profiles;
-CREATE POLICY profiles_update_own
-  ON public.profiles
-  FOR UPDATE
-  TO authenticated
-  USING (id = auth.uid())
-  WITH CHECK (id = auth.uid());
-
