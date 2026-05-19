@@ -1,0 +1,1443 @@
+-- ================================================================================
+-- CyberConnect — FULL DATABASE SCHEMA (tables, RBAC triggers, RPCs) — NO RLS
+-- Supabase SQL Editor · Role = postgres · run top to bottom.
+-- Then run: database/cyberconnect_rls.sql
+-- See: database/README.md
+-- ================================================================================
+
+
+-- ########## FILE: 00_full_schema_bootstrap.sql ##########
+
+-- =============================================================================
+-- CyberConnect - bootstrap for a NEW Supabase / Postgres database
+-- Run this section FIRST, then the table/migration sections in the .txt bundle.
+-- Requires: Supabase project (auth.users exists) or compatible Postgres + auth schema.
+-- =============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+-- -----------------------------------------------------------------------------
+-- ENUM types (reconstructed from app + database/*.sql; adjust if your prod differs)
+-- -----------------------------------------------------------------------------
+DO $$ BEGIN
+  CREATE TYPE public.user_role AS ENUM ('admin', 'pm', 'dev', 'client');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.team_roles AS ENUM ('admin', 'member');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.workspace_type AS ENUM ('team', 'personal');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.project_status AS ENUM ('active', 'completed', 'on_hold');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.workspace_roles AS ENUM ('pm', 'dev', 'client', 'member');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.task_status AS ENUM (
+    'Not started', 'In progress', 'In review', 'Done', 'Blocked', 'Need to be checked'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.screen_status AS ENUM (
+    'Not started', 'In progress', 'In review', 'Completed', 'Need to be checked'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.function_status AS ENUM (
+    'Not started', 'In progress', 'In review', 'Completed', 'Need to be checked'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.check_status AS ENUM ('', 'Done', 'Need to be checked', 'In progress', 'Completed');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.pm_check AS ENUM ('', 'Done', 'Need to be checked');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.phase_type AS ENUM ('MVP', 'v2', 'v3', 'actual_performance');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.test_result AS ENUM ('', 'Pass', 'Fail', 'Blocked', 'Not run');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.api_status AS ENUM ('Not started', 'In progress', 'Completed', 'Need to be checked');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.realtime_type AS ENUM ('Yes', 'No', 'Partial');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.process_status AS ENUM ('Planned', 'In progress', 'Done', 'Blocked');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- -----------------------------------------------------------------------------
+-- Helper functions referenced by table triggers (minimal stubs; tighten in prod)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.check_team_size()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.enforce_staff_limit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.set_team_invite_code()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.invite_code IS NULL OR btrim(NEW.invite_code) = '' THEN
+    NEW.invite_code := encode(gen_random_bytes(8), 'hex');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.enforce_project_assignment_limit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- teams + profiles: break circular FK (teams.owner_id <-> profiles.team_id)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.teams (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  created_at timestamptz NULL DEFAULT now(),
+  slug text NOT NULL,
+  owner_id uuid NULL,
+  invite_code text NULL,
+  CONSTRAINT teams_pkey PRIMARY KEY (id),
+  CONSTRAINT teams_slug_unique UNIQUE (slug)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS teams_invite_code_unique ON public.teams USING btree (invite_code);
+
+DROP TRIGGER IF EXISTS trg_teams_invite_code ON public.teams;
+CREATE TRIGGER trg_teams_invite_code
+  BEFORE INSERT ON public.teams
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_team_invite_code();
+
+
+-- ########## FILE: profiles.sql ##########
+
+create table public.profiles (
+  id uuid not null,
+  name text not null,
+  email text not null,
+  role public.user_role not null default 'client'::user_role,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  extra_roles user_role[] not null default '{}'::user_role[],
+  invited_by uuid null,
+  status text not null default 'active'::text,
+  avatar_url text not null default ''::text,
+  department text not null default ''::text,
+  team_id uuid null,
+  team_role public.team_roles null default 'member'::team_roles,
+  constraint profiles_pkey primary key (id),
+  constraint profiles_email_key unique (email),
+  constraint profiles_id_fkey foreign KEY (id) references auth.users (id) on delete CASCADE,
+  constraint profiles_invited_by_fkey foreign KEY (invited_by) references profiles (id),
+  constraint profiles_team_id_fkey foreign KEY (team_id) references teams (id),
+  constraint profiles_status_check check (
+    (
+      status = any (
+        array[
+          'pending'::text,
+          'active'::text,
+          'suspended'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create trigger trg_profiles_updated_at BEFORE
+update on profiles for EACH row
+execute FUNCTION set_updated_at ();
+
+create trigger trigger_check_team_size BEFORE INSERT
+or
+update OF team_id,
+role on profiles for EACH row when (new.team_id is not null)
+execute FUNCTION check_team_size ();
+
+create trigger trigger_enforce_staff_limit BEFORE INSERT
+or
+update OF team_role,
+team_id on profiles for EACH row when (new.team_id is not null)
+execute FUNCTION enforce_staff_limit ();
+
+-- ########## FILE: 01_teams_owner_fk.sql ##########
+
+-- Run after profiles.sql (bootstrap already created public.teams without owner FK).
+ALTER TABLE public.teams
+  DROP CONSTRAINT IF EXISTS teams_owner_id_fkey;
+
+ALTER TABLE public.teams
+  ADD CONSTRAINT teams_owner_id_fkey
+  FOREIGN KEY (owner_id) REFERENCES public.profiles (id);
+
+
+-- ########## FILE: team_members.sql ##########
+
+create table public.team_members (
+  team_id uuid not null,
+  profile_id uuid not null,
+  role public.team_roles not null default 'member'::team_roles,
+  created_at timestamp with time zone not null default now(),
+  constraint team_members_pkey primary key (team_id, profile_id),
+  constraint team_members_profile_id_fkey foreign KEY (profile_id) references profiles (id) on delete CASCADE,
+  constraint team_members_team_id_fkey foreign KEY (team_id) references teams (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+-- ########## FILE: projects.sql ##########
+
+create table public.projects (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  name text not null,
+  name_ja text not null default ''::text,
+  client text not null default ''::text,
+  pm_id uuid null,
+  client_id uuid null,
+  description text not null default ''::text,
+  description_ja text not null default ''::text,
+  color text not null default 'from-brand-500 to-brand-700'::text,
+  status public.project_status not null default 'active'::project_status,
+  background text not null default ''::text,
+  background_ja text not null default ''::text,
+  purpose text not null default ''::text,
+  purpose_ja text not null default ''::text,
+  dev_period text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  workspace_type public.workspace_type not null default 'team'::workspace_type,
+  owner_id uuid not null,
+  team_id uuid null,
+  constraint projects_pkey primary key (id),
+  constraint projects_client_id_fkey foreign KEY (client_id) references profiles (id) on delete set null,
+  constraint projects_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete set null,
+  constraint projects_pm_id_fkey foreign KEY (pm_id) references profiles (id) on delete set null,
+  constraint projects_team_id_fkey foreign KEY (team_id) references teams (id),
+  constraint check_project_isolation check (
+    (
+      (
+        (workspace_type = 'team'::workspace_type)
+        and (team_id is not null)
+      )
+      or (
+        (workspace_type = 'personal'::workspace_type)
+        and (team_id is null)
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create trigger trg_projects_updated_at BEFORE
+update on projects for EACH row
+execute FUNCTION set_updated_at ();
+
+-- ########## FILE: project_members.sql ##########
+
+create table public.project_members (
+  project_id uuid not null,
+  profile_id uuid not null,
+  workspace_role public.workspace_roles not null default 'member'::workspace_roles,
+  constraint project_members_pkey primary key (project_id, profile_id),
+  constraint project_members_profile_id_fkey foreign KEY (profile_id) references profiles (id) on delete CASCADE,
+  constraint project_members_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger trigger_project_assignment_limit BEFORE INSERT
+or
+update OF workspace_role on project_members for EACH row
+execute FUNCTION enforce_project_assignment_limit ();
+
+-- ########## FILE: invitations.sql ##########
+
+create table public.invitations (
+  id uuid not null default gen_random_uuid (),
+  email text not null,
+  name text not null default ''::text,
+  roles user_role[] not null default array['client'::user_role],
+  project_ids uuid[] not null default '{}'::uuid[],
+  invited_by uuid null,
+  token text not null default encode(extensions.gen_random_bytes (32), 'hex'::text),
+  status text not null default 'pending'::text,
+  created_at timestamp with time zone not null default now(),
+  expires_at timestamp with time zone not null default (now() + '7 days'::interval),
+  constraint invitations_pkey primary key (id),
+  constraint invitations_token_key unique (token),
+  constraint invitations_invited_by_fkey foreign KEY (invited_by) references profiles (id) on delete set null,
+  constraint invitations_status_check check (
+    (
+      status = any (
+        array[
+          'pending'::text,
+          'accepted'::text,
+          'expired'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+-- ########## FILE: code_sequences.sql ##########
+
+create table public.code_sequences (
+  project_id uuid not null,
+  prefix text not null,
+  last_val integer not null default 0,
+  constraint code_sequences_pkey primary key (project_id, prefix),
+  constraint code_sequences_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+-- ########## FILE: purpose_rows.sql ##########
+
+create table public.purpose_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  major_item text not null default ''::text,
+  major_item_ja text not null default ''::text,
+  content text not null default ''::text,
+  content_ja text not null default ''::text,
+  details text not null default ''::text,
+  details_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
+  constraint purpose_rows_pkey primary key (id),
+  constraint purpose_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_purpose_rows_project on public.purpose_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create trigger trg_purpose_rows_updated_at BEFORE
+update on purpose_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- RBAC triggers for purpose_rows: rbac_sheet_triggers.sql (end of bundle)
+
+-- ########## FILE: tech_stack_rows.sql ##########
+
+create table public.tech_stack_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  major_item text not null default ''::text,
+  major_item_ja text not null default ''::text,
+  medium_item text not null default ''::text,
+  medium_item_ja text not null default ''::text,
+  content text not null default ''::text,
+  content_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
+  constraint tech_stack_rows_pkey primary key (id),
+  constraint tech_stack_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_tech_stack_project on public.tech_stack_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+-- RBAC triggers for tech_stack_rows: rbac_sheet_triggers.sql
+
+create trigger trg_tech_stack_updated_at BEFORE
+update on tech_stack_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- ########## FILE: non_func_rows.sql ##########
+
+create table public.non_func_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  major_item text not null default ''::text,
+  major_item_ja text not null default ''::text,
+  medium_item text not null default ''::text,
+  medium_item_ja text not null default ''::text,
+  content text not null default ''::text,
+  content_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
+  constraint non_func_rows_pkey primary key (id),
+  constraint non_func_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_non_func_project on public.non_func_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create trigger trg_non_func_updated_at BEFORE
+update on non_func_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- RBAC triggers for non_func_rows: rbac_sheet_triggers.sql
+
+-- ########## FILE: screen_list_rows.sql ##########
+
+create table public.screen_list_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  screen_code text not null default ''::text,
+  user_category text not null default ''::text,
+  user_category_ja text not null default ''::text,
+  major_item text not null default ''::text,
+  major_item_ja text not null default ''::text,
+  medium_item text not null default ''::text,
+  medium_item_ja text not null default ''::text,
+  screen_name text not null default ''::text,
+  screen_name_ja text not null default ''::text,
+  path text not null default ''::text,
+  overview text not null default ''::text,
+  overview_ja text not null default ''::text,
+  status public.screen_status null default 'Not started'::screen_status,
+  completion_dev public.check_status null default ''::check_status,
+  completion_client public.check_status null default ''::check_status,
+  remarks text not null default ''::text,
+  remarks_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  path_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
+  constraint screen_list_rows_pkey primary key (id),
+  constraint screen_list_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_screen_list_project on public.screen_list_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create unique INDEX IF not exists idx_screen_code_project on public.screen_list_rows using btree (project_id, screen_code) TABLESPACE pg_default
+where
+  (screen_code <> ''::text);
+
+-- RBAC triggers for screen_list_rows: rbac_sheet_triggers.sql
+
+create trigger trg_screen_list_updated_at BEFORE
+update on screen_list_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- ########## FILE: function_list_rows.sql ##########
+
+create table public.function_list_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  function_code text not null default ''::text,
+  phase public.phase_type null,
+  user_category text not null default ''::text,
+  user_category_ja text not null default ''::text,
+  main_category text not null default ''::text,
+  main_category_ja text not null default ''::text,
+  subcategory text not null default ''::text,
+  subcategory_ja text not null default ''::text,
+  screen_code text not null default ''::text,
+  screen_name text not null default ''::text,
+  screen_name_ja text not null default ''::text,
+  function_name text not null default ''::text,
+  function_name_ja text not null default ''::text,
+  function_details text not null default ''::text,
+  function_details_ja text not null default ''::text,
+  effort text not null default ''::text,
+  status public.function_status null default 'Need to be checked'::function_status,
+  completion_dev public.check_status null default ''::check_status,
+  completion_client public.check_status null default ''::check_status,
+  remarks text not null default ''::text,
+  remarks_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  phase_ja text not null default ''::text,
+  effort_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
+  constraint function_list_rows_pkey primary key (id),
+  constraint function_list_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_function_list_project on public.function_list_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create index IF not exists idx_function_screen_code on public.function_list_rows using btree (project_id, screen_code) TABLESPACE pg_default;
+
+create unique INDEX IF not exists idx_function_code_project on public.function_list_rows using btree (project_id, function_code) TABLESPACE pg_default
+where
+  (function_code <> ''::text);
+
+-- RBAC triggers for function_list_rows: rbac_sheet_triggers.sql
+
+-- ########## FILE: task_rows.sql ##########
+
+create table public.task_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  task_code text not null default ''::text,
+  phase text null,
+  sprint text not null default ''::text,
+  epic text not null default ''::text,
+  epic_ja text not null default ''::text,
+  screen_code text not null default ''::text,
+  function_code text not null default ''::text,
+  task text not null default ''::text,
+  task_ja text not null default ''::text,
+  person_day numeric(6, 1) null,
+  assignee_id uuid null,
+  status text null default 'Not started'::task_status,
+  deadline date null,
+  completed_date date null,
+  completion_pm public.pm_check null default ''::pm_check,
+  remark text not null default ''::text,
+  remark_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  medium_item text not null default ''::text,
+  medium_item_ja text not null default ''::text,
+  phase_ja text not null default ''::text,
+  sprint_ja text not null default ''::text,
+  screen_name text not null default ''::text,
+  screen_name_ja text not null default ''::text,
+  function_name text not null default ''::text,
+  function_name_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
+  constraint task_rows_pkey primary key (id),
+  constraint task_rows_assignee_id_fkey foreign KEY (assignee_id) references profiles (id) on delete set null,
+  constraint task_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_task_rows_project on public.task_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create index IF not exists idx_task_screen_code on public.task_rows using btree (project_id, screen_code) TABLESPACE pg_default;
+
+create index IF not exists idx_task_function_code on public.task_rows using btree (project_id, function_code) TABLESPACE pg_default;
+
+create unique INDEX IF not exists idx_task_code_project on public.task_rows using btree (project_id, task_code) TABLESPACE pg_default
+where
+  (task_code <> ''::text);
+
+-- RBAC triggers for task_rows: rbac_sheet_triggers.sql
+
+create trigger trg_task_rows_updated_at BEFORE
+update on task_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- ########## FILE: test_case_rows.sql ##########
+
+create table public.test_case_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  category text not null default ''::text,
+  category_ja text not null default ''::text,
+  scenario_name text not null default ''::text,
+  scenario_name_ja text not null default ''::text,
+  test_type text not null default ''::text,
+  summary text not null default ''::text,
+  summary_ja text not null default ''::text,
+  test_steps text not null default ''::text,
+  test_steps_ja text not null default ''::text,
+  expected_results text not null default ''::text,
+  expected_results_ja text not null default ''::text,
+  status public.test_result null default ''::test_result,
+  tester_id uuid null,
+  remarks text not null default ''::text,
+  remarks_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  test_type_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
+  constraint test_case_rows_pkey primary key (id),
+  constraint test_case_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE,
+  constraint test_case_rows_tester_id_fkey foreign KEY (tester_id) references profiles (id) on delete set null
+) TABLESPACE pg_default;
+
+create index IF not exists idx_test_case_project on public.test_case_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+-- RBAC triggers for test_case_rows: rbac_sheet_triggers.sql
+
+create trigger trg_test_case_updated_at BEFORE
+update on test_case_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- ########## FILE: app_list_rows.sql ##########
+
+create table public.api_list_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  category text not null default ''::text,
+  category_ja text not null default ''::text,
+  service_name text not null default ''::text,
+  service_name_ja text not null default ''::text,
+  api_name text not null default ''::text,
+  api_name_ja text not null default ''::text,
+  auth_method text not null default ''::text,
+  auth_method_ja text not null default ''::text,
+  data_handling text not null default ''::text,
+  data_handling_ja text not null default ''::text,
+  realtime public.realtime_type null,
+  mvp_required public.phase_type null,
+  status public.api_status null default 'Not started'::api_status,
+  remarks text not null default ''::text,
+  remarks_ja text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
+  constraint api_list_rows_pkey primary key (id),
+  constraint api_list_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_api_list_project on public.api_list_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create trigger trg_api_list_updated_at BEFORE
+update on api_list_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- RBAC triggers for api_list_rows: rbac_sheet_triggers.sql
+
+-- ########## FILE: backlog_rows.sql ##########
+
+create table public.backlog_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  epic text not null default ''::text,
+  epic_ja text not null default ''::text,
+  story text not null default ''::text,
+  story_ja text not null default ''::text,
+  task text not null default ''::text,
+  task_ja text not null default ''::text,
+  owner_id uuid null,
+  sprint text not null default ''::text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  extras jsonb not null default '{}'::jsonb,
+  constraint backlog_rows_pkey primary key (id),
+  constraint backlog_rows_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete set null,
+  constraint backlog_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_backlog_project on public.backlog_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create trigger trg_backlog_updated_at BEFORE
+update on backlog_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- RBAC triggers for backlog_rows: rbac_sheet_triggers.sql
+
+-- ########## FILE: process_chart_rows.sql ##########
+
+create table public.process_chart_rows (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  project_id uuid not null,
+  sort_order integer not null default 0,
+  code text not null default ''::text,
+  category text not null default ''::text,
+  category_ja text not null default ''::text,
+  task text not null default ''::text,
+  task_ja text not null default ''::text,
+  sprint text not null default ''::text,
+  person_days numeric(6, 1) null,
+  status public.process_status null default 'Planned'::process_status,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  sprint_ja text not null default ''::text,
+  extras jsonb not null default '{}'::jsonb,
+  constraint process_chart_rows_pkey primary key (id),
+  constraint process_chart_rows_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_process_chart_project on public.process_chart_rows using btree (project_id, sort_order) TABLESPACE pg_default;
+
+create trigger trg_process_chart_updated_at BEFORE
+update on process_chart_rows for EACH row
+execute FUNCTION set_updated_at ();
+
+-- RBAC triggers for process_chart_rows: rbac_sheet_triggers.sql
+
+-- ########## FILE: project_sheet_column_layouts.sql ##########
+
+CREATE TABLE IF NOT EXISTS public.project_sheet_column_layouts (
+  project_id uuid not null,
+  tab_id text not null,
+  columns jsonb not null default '[]'::jsonb,
+  updated_at timestamp with time zone not null default now(),
+  constraint project_sheet_column_layouts_pkey primary key (project_id, tab_id),
+  constraint project_sheet_column_layouts_project_id_fkey foreign KEY (project_id) references projects (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_project_sheet_column_layouts_project on public.project_sheet_column_layouts using btree (project_id) TABLESPACE pg_default;
+
+-- ########## FILE: migrate_add_bilingual_columns_all_sheets.sql ##########
+
+-- Migration: add missing EN/JP companion text columns so JP and EN CSV merge-by-code can
+-- populate every human-readable field without overwriting the other locale.
+--
+-- Run against your Supabase / Postgres project (SQL editor or `psql`).
+-- Safe to re-run: uses IF NOT EXISTS.
+--
+-- Tables purpose_rows, tech_stack_rows, non_func_rows, screen_list_rows (except path),
+-- function_list_rows (except phase label + effort), test_case_rows (except test_type),
+-- backlog_rows, app_list_rows, and most of task_rows already had *_ja pairs.
+-- This migration fills the remaining gaps.
+
+-- â”€â”€ Tasks: JP docs often use å¤§é …ç›®/ä¸­é …ç›®/ç”»é¢å/æ©Ÿèƒ½å/ã‚¹ãƒ—ãƒªãƒ³ãƒˆ alongside EN merge keys â”€â”€
+ALTER TABLE public.task_rows
+  ADD COLUMN IF NOT EXISTS medium_item text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS medium_item_ja text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS phase_ja text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS sprint_ja text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS screen_name text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS screen_name_ja text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS function_name text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS function_name_ja text NOT NULL DEFAULT ''::text;
+
+COMMENT ON COLUMN public.task_rows.medium_item IS 'Medium category (EN); pairs with medium_item_ja';
+COMMENT ON COLUMN public.task_rows.medium_item_ja IS 'Medium category (JA)';
+COMMENT ON COLUMN public.task_rows.phase_ja IS 'Phase label as shown in JP sources (canonical phase enum stays in phase)';
+COMMENT ON COLUMN public.task_rows.sprint_ja IS 'Sprint label as shown in JP sources';
+COMMENT ON COLUMN public.task_rows.screen_name IS 'Denormalized screen title (EN)';
+COMMENT ON COLUMN public.task_rows.screen_name_ja IS 'Denormalized screen title (JA)';
+COMMENT ON COLUMN public.task_rows.function_name IS 'Denormalized function title (EN)';
+COMMENT ON COLUMN public.task_rows.function_name_ja IS 'Denormalized function title (JA)';
+
+-- â”€â”€ Screens: path JP companion â”€â”€
+ALTER TABLE public.screen_list_rows
+  ADD COLUMN IF NOT EXISTS path_ja text NOT NULL DEFAULT ''::text;
+
+COMMENT ON COLUMN public.screen_list_rows.path_ja IS 'URL/path label (JA)';
+
+-- â”€â”€ Functions: JP phase wording + effort wording (enum phase stays in phase) â”€â”€
+ALTER TABLE public.function_list_rows
+  ADD COLUMN IF NOT EXISTS phase_ja text NOT NULL DEFAULT ''::text,
+  ADD COLUMN IF NOT EXISTS effort_ja text NOT NULL DEFAULT ''::text;
+
+COMMENT ON COLUMN public.function_list_rows.phase_ja IS 'Phase label as shown in JP sources';
+COMMENT ON COLUMN public.function_list_rows.effort_ja IS 'Effort / estimate text (JA)';
+
+-- â”€â”€ Test cases: test type JP â”€â”€
+ALTER TABLE public.test_case_rows
+  ADD COLUMN IF NOT EXISTS test_type_ja text NOT NULL DEFAULT ''::text;
+
+COMMENT ON COLUMN public.test_case_rows.test_type_ja IS 'Test type label (JA)';
+
+-- â”€â”€ Process chart: sprint JP (sprint remains primary EN/slug column) â”€â”€
+ALTER TABLE public.process_chart_rows
+  ADD COLUMN IF NOT EXISTS sprint_ja text NOT NULL DEFAULT ''::text;
+
+COMMENT ON COLUMN public.process_chart_rows.sprint_ja IS 'Sprint label (JA)';
+
+
+-- ########## FILE: migrate_sheet_column_layouts_and_extras.sql ##########
+
+-- Per-project sheet column layouts + row-level JSON extras for custom fields.
+-- Run on Supabase / Postgres. Safe to re-run (IF NOT EXISTS).
+
+CREATE TABLE IF NOT EXISTS public.project_sheet_column_layouts (
+  project_id uuid NOT NULL REFERENCES public.projects (id) ON DELETE CASCADE,
+  tab_id text NOT NULL,
+  columns jsonb NOT NULL DEFAULT '[]'::jsonb,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT project_sheet_column_layouts_pkey PRIMARY KEY (project_id, tab_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_sheet_column_layouts_project
+  ON public.project_sheet_column_layouts (project_id);
+
+-- Custom field storage (flat keys merged client-side into each row)
+ALTER TABLE public.purpose_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.tech_stack_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.non_func_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.screen_list_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.function_list_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.task_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.test_case_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.api_list_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.backlog_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.process_chart_rows ADD COLUMN IF NOT EXISTS extras jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+
+-- ########## FILE: task_status_add_in_review.sql ##########
+
+-- Adds task status value for UI + task_rows.status (public.task_status enum).
+-- Run on Supabase SQL editor or psql after reviewing your PG version.
+-- PostgreSQL 15+: you can use ADD VALUE IF NOT EXISTS instead of the DO block.
+
+DO $$
+BEGIN
+  ALTER TYPE public.task_status ADD VALUE 'In review';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END;
+$$;
+
+
+-- ########## FILE: screen_status_add_in_review.sql ##########
+
+-- =============================================================================
+-- Screens sheet: allow Status = "In review"
+-- =============================================================================
+-- Without this, saves fail with:
+--   invalid input value for enum screen_status: "In review"
+-- Functions use a separate enum â€” run database/function_status_add_in_review.sql for those.
+--
+-- Run once in Supabase SQL Editor (same database as your app).
+-- =============================================================================
+
+DO $$
+BEGIN
+  ALTER TYPE public.screen_status ADD VALUE 'In review';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END;
+$$;
+
+-- Postgres 15+ only: you can use instead (idempotent, no DO block):
+-- ALTER TYPE public.screen_status ADD VALUE IF NOT EXISTS 'In review';
+
+
+-- ########## FILE: function_status_add_in_review.sql ##########
+
+-- Adds function sheet status value for UI + function_list_rows.status (public.function_status enum).
+-- Run on Supabase SQL editor or psql after reviewing your PG version.
+
+DO $$
+BEGIN
+  ALTER TYPE public.function_status ADD VALUE 'In review';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END;
+$$;
+
+
+-- ########## FILE: phase_type_add_actual_performance.sql ##########
+
+-- Run in Supabase SQL editor (or psql) once.
+-- Spreadsheets often use "The actual performance" for phase; the app enum must allow it.
+DO $migration$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'public'
+      AND t.typname = 'phase_type'
+      AND e.enumlabel = 'actual_performance'
+  ) THEN
+    ALTER TYPE public.phase_type ADD VALUE 'actual_performance';
+  END IF;
+END
+$migration$;
+  
+
+-- ########## FILE: migrate_backlog_sprint_to_text.sql ##########
+
+-- Backlog sheet: `sprint` was `public.sprint_slot` (enum, often only "Backlog") while the app
+-- treats Sprint as free text (same as Tasks). Arbitrary values failed with invalid enum input.
+--
+-- Run once in Supabase SQL Editor on the project database.
+
+ALTER TABLE public.backlog_rows
+  ALTER COLUMN sprint DROP DEFAULT;
+
+ALTER TABLE public.backlog_rows
+  ALTER COLUMN sprint TYPE text
+  USING (COALESCE(sprint::text, ''));
+
+ALTER TABLE public.backlog_rows
+  ALTER COLUMN sprint SET DEFAULT ''::text,
+  ALTER COLUMN sprint SET NOT NULL;
+
+
+-- ########## FILE: rbac_sheet_triggers.sql ##########
+
+-- =============================================================================
+-- Sheet RBAC: project role (pm / dev / client) enforced on row tables
+--
+-- Schema refs (repo database/*.sql):
+--   projects.sql          -> public.projects
+--   team_members.sql      -> public.team_members (team_roles)
+--   project_members.sql   -> public.project_members (workspace_roles)
+--   *_rows.sql            -> sheet tables (purpose_rows, task_rows, â€¦)
+--
+-- Parser note (Supabase / PL/pgSQL):
+--   Avoid multi-column "SELECT â€¦ INTO var1, var2, â€¦" â€” it can mis-parse INTO targets
+--   as relation names ("v_owner_id does not exist"). Prefer scalar assigns:
+--   var := (SELECT single_col FROM â€¦);
+--
+-- Run the entire file top-to-bottom in one batch so functions exist before CREATE TRIGGER.
+-- =============================================================================
+
+-- Resolve the effective sheet role for the current user on a project.
+-- Priority: personal owner -> profiles.role admin -> team.owner -> team admin member ->
+-- projects.pm_id -> project_members.workspace_role -> client_id -> default client.
+-- Keep ordering aligned with src/lib/team-project-auth.ts resolveTeamProjectPrivilege.
+CREATE OR REPLACE FUNCTION public.resolve_project_sheet_role (p_project_id uuid)
+  RETURNS text
+  LANGUAGE plpgsql
+  STABLE
+  SECURITY DEFINER
+  SET search_path = public
+  AS $func$
+DECLARE
+  uid uuid := auth.uid();
+  wr text;
+  v_owner_id uuid;
+  v_team_id uuid;
+  v_pm_id uuid;
+  v_client_id uuid;
+  v_workspace_type text;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.projects AS pr
+    WHERE
+      pr.id = p_project_id) THEN
+    RETURN NULL;
+  END IF;
+
+  -- One column per assign: no multi-target SELECT INTO (avoids "relation v_* does not exist").
+  v_owner_id := (
+    SELECT
+      pr.owner_id
+    FROM
+      public.projects AS pr
+    WHERE
+      pr.id = p_project_id);
+
+  v_team_id := (
+    SELECT
+      pr.team_id
+    FROM
+      public.projects AS pr
+    WHERE
+      pr.id = p_project_id);
+
+  v_pm_id := (
+    SELECT
+      pr.pm_id
+    FROM
+      public.projects AS pr
+    WHERE
+      pr.id = p_project_id);
+
+  v_client_id := (
+    SELECT
+      pr.client_id
+    FROM
+      public.projects AS pr
+    WHERE
+      pr.id = p_project_id);
+
+  v_workspace_type := (
+    SELECT
+      CAST(pr.workspace_type AS text)
+    FROM
+      public.projects AS pr
+    WHERE
+      pr.id = p_project_id);
+
+  -- Personal workspace: only the owner may write; treat as PM for sheet policy.
+  IF v_workspace_type = 'personal' AND v_owner_id = uid THEN
+    RETURN 'pm';
+  END IF;
+
+  -- Platform profile admin (matches app: full sheet access before project_members.dev).
+  -- Compare as text: production DBs may use enum user_role without an 'admin' label â€” comparing
+  -- to 'admin'::user_role raises invalid input; ::text matches migrate_project_sheet_column_layouts_rls.sql.
+  IF EXISTS (
+    SELECT
+      1
+    FROM
+      public.profiles p
+    WHERE
+      p.id = uid
+      AND p.role::text = 'admin') THEN
+    RETURN 'pm';
+  END IF;
+
+  -- Team billing owner (matches app resolveTeamProjectPrivilege).
+  IF v_team_id IS NOT NULL AND EXISTS (
+    SELECT
+      1
+    FROM
+      public.teams t
+    WHERE
+      t.id = v_team_id
+      AND t.owner_id = uid) THEN
+    RETURN 'pm';
+  END IF;
+
+  -- Team company admin: full PM-level access to all team projects
+  IF v_team_id IS NOT NULL AND EXISTS (
+    SELECT
+      1
+    FROM
+      public.team_members tm
+    WHERE
+      tm.team_id = v_team_id
+      AND tm.profile_id = uid
+      AND tm.role = 'admin') THEN
+    RETURN 'pm';
+  END IF;
+
+  IF v_pm_id = uid THEN
+    RETURN 'pm';
+  END IF;
+
+  wr := (
+    SELECT
+      CAST(pm.workspace_role AS text)
+    FROM
+      public.project_members pm
+    WHERE
+      pm.project_id = p_project_id
+      AND pm.profile_id = uid);
+
+  IF wr IS NOT NULL THEN
+    RETURN wr;
+  END IF;
+
+  IF v_client_id = uid THEN
+    RETURN 'client';
+  END IF;
+
+  -- Restrictive default if the user reached the row via RLS but has no mapping
+  RETURN 'client';
+END;
+
+$func$;
+
+-- -----------------------------------------------------------------------------
+-- Strip JSON keys then compare OLD vs NEW (client may change remark columns;
+-- on screen/function sheets also `status` â€” matches product rule for assignees).
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.sheet_client_json_strip_for_compare (p_table_name text, p_payload jsonb)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  IMMUTABLE
+  AS $func$
+DECLARE
+  strip text[];
+  sk text;
+  result jsonb := p_payload;
+BEGIN
+  strip := CASE p_table_name
+  WHEN 'purpose_rows' THEN
+    ARRAY['updated_at'::text]
+  WHEN 'tech_stack_rows' THEN
+    ARRAY['updated_at'::text]
+  WHEN 'non_func_rows' THEN
+    ARRAY['updated_at'::text]
+  WHEN 'screen_list_rows' THEN
+    ARRAY['remarks', 'remarks_ja', 'status', 'updated_at']
+  WHEN 'function_list_rows' THEN
+    ARRAY['remarks', 'remarks_ja', 'status', 'updated_at']
+  WHEN 'test_case_rows' THEN
+    ARRAY['remarks', 'remarks_ja', 'updated_at']
+  WHEN 'api_list_rows' THEN
+    ARRAY['remarks', 'remarks_ja', 'updated_at']
+  WHEN 'backlog_rows' THEN
+    ARRAY['updated_at'::text]
+  WHEN 'process_chart_rows' THEN
+    ARRAY['updated_at'::text]
+  ELSE
+    ARRAY['updated_at'::text]
+  END;
+
+  FOREACH sk IN ARRAY strip LOOP
+    result := result - sk;
+  END LOOP;
+
+  RETURN result;
+END;
+
+$func$;
+
+CREATE OR REPLACE FUNCTION public.enforce_general_sheet_row_rbac ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+  AS $func$
+DECLARE
+  r text;
+  v_project_id uuid;
+  jold jsonb;
+  jnew jsonb;
+BEGIN
+  v_project_id := COALESCE(NEW.project_id, OLD.project_id);
+  r := public.resolve_project_sheet_role (v_project_id);
+
+  IF r IS NULL THEN
+    RAISE EXCEPTION 'Access Denied';
+  END IF;
+
+  IF r = 'pm' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    ELSE
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF TG_OP IN ('INSERT', 'DELETE') THEN
+    IF r IN ('dev', 'member') THEN
+      RAISE EXCEPTION 'Access Denied: Developers have view-only access to this sheet.';
+    END IF;
+
+    IF r = 'client' THEN
+      RAISE EXCEPTION 'Access Denied';
+    END IF;
+
+    RAISE EXCEPTION 'Access Denied';
+  END IF;
+
+  -- UPDATE
+  IF r IN ('dev', 'member') THEN
+    -- Developers may update only `status` on screen/function sheets (same workflow as tasks).
+    IF TG_TABLE_NAME IN ('screen_list_rows', 'function_list_rows') THEN
+      jold := to_jsonb (OLD) - 'status' - 'updated_at';
+      jnew := to_jsonb (NEW) - 'status' - 'updated_at';
+      IF jold IS NOT DISTINCT FROM jnew THEN
+        RETURN NEW;
+      END IF;
+    END IF;
+    RAISE EXCEPTION 'Access Denied: Developers have view-only access to this sheet.';
+  END IF;
+
+  IF r = 'client' THEN
+    jold := public.sheet_client_json_strip_for_compare (TG_TABLE_NAME::text, to_jsonb (OLD));
+    jnew := public.sheet_client_json_strip_for_compare (TG_TABLE_NAME::text, to_jsonb (NEW));
+
+    IF jold IS DISTINCT FROM jnew THEN
+      RAISE EXCEPTION 'Access Denied: Clients can only update remarks.';
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Access Denied';
+END;
+
+$func$;
+
+CREATE OR REPLACE FUNCTION public.enforce_task_row_rbac ()
+  RETURNS TRIGGER
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+  AS $func$
+DECLARE
+  r text;
+  v_project_id uuid;
+  jold jsonb;
+  jnew jsonb;
+BEGIN
+  v_project_id := COALESCE(NEW.project_id, OLD.project_id);
+  r := public.resolve_project_sheet_role (v_project_id);
+
+  IF r IS NULL THEN
+    RAISE EXCEPTION 'Access Denied';
+  END IF;
+
+  IF r = 'pm' THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    ELSE
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF r IN ('dev', 'member') THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    ELSE
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF r = 'client' THEN
+    IF TG_OP IN ('INSERT', 'DELETE') THEN
+      RAISE EXCEPTION 'Access Denied';
+    END IF;
+
+    jold := to_jsonb (OLD) - 'remark' - 'remark_ja' - 'updated_at';
+    jnew := to_jsonb (NEW) - 'remark' - 'remark_ja' - 'updated_at';
+
+    IF jold IS DISTINCT FROM jnew THEN
+      RAISE EXCEPTION 'Access Denied: Clients can only update remarks.';
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'Access Denied';
+END;
+
+$func$;
+
+-- Drop existing triggers if re-running
+DROP TRIGGER IF EXISTS trg_rbac_general_purpose_rows ON public.purpose_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_tech_stack_rows ON public.tech_stack_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_non_func_rows ON public.non_func_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_screen_list_rows ON public.screen_list_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_function_list_rows ON public.function_list_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_test_case_rows ON public.test_case_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_backlog_rows ON public.backlog_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_process_chart_rows ON public.process_chart_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_general_api_list_rows ON public.api_list_rows;
+
+DROP TRIGGER IF EXISTS trg_rbac_task_rows ON public.task_rows;
+
+CREATE TRIGGER trg_rbac_general_purpose_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.purpose_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_tech_stack_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.tech_stack_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_non_func_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.non_func_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_screen_list_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.screen_list_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_function_list_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.function_list_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_test_case_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.test_case_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_backlog_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.backlog_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_process_chart_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.process_chart_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_general_api_list_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.api_list_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_general_sheet_row_rbac ();
+
+CREATE TRIGGER trg_rbac_task_rows
+  BEFORE INSERT OR UPDATE OR DELETE ON public.task_rows
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_task_row_rbac ();
+
+
+
+-- ########## FILE: get_team_member_profiles.sql ##########
+
+-- =============================================================================
+-- Team roster for assignment UIs (run after team_members.sql + profiles exist).
+-- PostgREST: exposes RPC get_team_member_profiles for authenticated clients.
+-- Without this, getTeamMembersAction falls back to team_members + profiles(*),
+-- which is often empty for other users under strict profiles RLS.
+-- =============================================================================
+
+create or replace function public.get_team_member_profiles(p_team_id uuid)
+returns table (
+  id uuid,
+  name text,
+  email text,
+  role text,
+  avatar_url text,
+  department text,
+  team_role public.team_roles
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  caller_profile uuid;
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+
+  select p.id into caller_profile
+  from public.profiles p
+  where p.id = auth.uid()
+  limit 1;
+
+  if caller_profile is null then
+    select p.id into caller_profile
+    from public.profiles p
+    inner join auth.users u on lower(u.email) = lower(p.email)
+    where u.id = auth.uid()
+    limit 1;
+  end if;
+
+  if caller_profile is null then
+    return;
+  end if;
+
+  if not exists (
+    select 1 from public.team_members tm
+    where tm.team_id = p_team_id and tm.profile_id = caller_profile
+  ) then
+    return;
+  end if;
+
+  return query
+  select
+    p.id,
+    p.name,
+    p.email,
+    coalesce(p.role::text, 'dev'),
+    p.avatar_url,
+    p.department,
+    tm.role
+  from public.team_members tm
+  inner join public.profiles p on p.id = tm.profile_id
+  where tm.team_id = p_team_id;
+end;
+$$;
+
+revoke all on function public.get_team_member_profiles(uuid) from public;
+grant execute on function public.get_team_member_profiles(uuid) to authenticated;
+
+-- ########## FILE: migrate_set_team_member_role.sql ##########
+
+-- Billing owner may promote/demote company admins (team_members.role).
+-- Run in Supabase SQL editor if direct UPDATE on team_members is blocked by RLS.
+
+create or replace function public.set_team_member_role(
+  p_team_id uuid,
+  p_profile_id uuid,
+  p_role public.team_roles
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller_profile uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select p.id into caller_profile
+  from public.profiles p
+  where p.id = auth.uid()
+  limit 1;
+
+  if caller_profile is null then
+    select p.id into caller_profile
+    from public.profiles p
+    inner join auth.users u on lower(u.email) = lower(p.email)
+    where u.id = auth.uid()
+    limit 1;
+  end if;
+
+  if caller_profile is null then
+    raise exception 'Profile not found';
+  end if;
+
+  if not exists (
+    select 1 from public.teams t
+    where t.id = p_team_id and t.owner_id = caller_profile
+  ) then
+    raise exception 'Forbidden: Only the billing owner can change company admin roles';
+  end if;
+
+  if exists (
+    select 1 from public.teams t
+    where t.id = p_team_id and t.owner_id = p_profile_id
+  ) then
+    raise exception 'Cannot change the billing owner team role';
+  end if;
+
+  if not exists (
+    select 1 from public.team_members tm
+    where tm.team_id = p_team_id and tm.profile_id = p_profile_id
+  ) then
+    raise exception 'Team member not found';
+  end if;
+
+  update public.team_members
+  set role = p_role
+  where team_id = p_team_id and profile_id = p_profile_id;
+
+  if not found then
+    raise exception 'Failed to update team member role';
+  end if;
+end;
+$$;
+
+revoke all on function public.set_team_member_role(uuid, uuid, public.team_roles) from public;
+grant execute on function public.set_team_member_role(uuid, uuid, public.team_roles) to authenticated;

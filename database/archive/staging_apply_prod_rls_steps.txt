@@ -1,0 +1,99 @@
+================================================================================
+STAGING = PROD RLS (step-by-step)
+================================================================================
+You already ran PROD Section A + C (view only). That is NOT enough to copy policies.
+You still need PROD Section B (DDL script) + prod helper FUNCTIONS.
+
+Projects: cyberconnect_platform = PROD | cyberconnect-dev = STAGING
+Always: SQL Editor -> Role = postgres
+
+--------------------------------------------------------------------------------
+PHASE 0 — Staging schema (skip if already done)
+--------------------------------------------------------------------------------
+[ ] Staging: ran database/cyberconnect_full_schema_paste.txt (tables exist)
+[ ] Staging: Authentication -> Email -> Confirm email OFF
+[ ] Staging: ran migrate_profiles_on_auth_user_created.sql (auto profile on signup)
+
+--------------------------------------------------------------------------------
+PHASE 1 — Export FUNCTIONS from PROD (required before policies)
+--------------------------------------------------------------------------------
+PROD project -> open database/export_prod_rls_functions_for_staging.sql
+
+[ ] Run the SELECT pg_get_functiondef(...) query
+[ ] Results: copy ALL rows from column "function_ddl" (each row is a full CREATE FUNCTION)
+[ ] STAGING: paste -> Run -> must show Success for each function
+
+If error "function does not exist" on a policy later, on PROD run the commented
+"list ALL public functions" query and copy any missing helpers into staging.
+
+--------------------------------------------------------------------------------
+PHASE 2 — Clear OLD staging-only policies (avoid duplicates with prod names)
+--------------------------------------------------------------------------------
+STAGING only — run this once:
+
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      r.policyname, r.schemaname, r.tablename
+    );
+  END LOOP;
+END $$;
+
+(This removes migrate_staging_core_rls_policies / hotfix policies you added earlier.)
+
+--------------------------------------------------------------------------------
+PHASE 3 — Prod policy SQL (already in repo from CSV export)
+--------------------------------------------------------------------------------
+Source: PROD Section B export saved as CSV (column "ddl"), converted to:
+  database/prod_rls_policies_paste.sql
+  (~127 CREATE POLICY, multi-line statements preserved; export 2026-05-19)
+
+To re-export later: PROD -> database/export_prod_rls_for_staging.sql Section B
+-> Export CSV -> regenerate prod_rls_policies_paste.sql (same Python merge as chat).
+
+Do NOT use Section C JSON for paste — Section C is for reading only.
+
+--------------------------------------------------------------------------------
+PHASE 3b — If sheet CRUD still fails after Phase 4
+--------------------------------------------------------------------------------
+Run on STAGING (postgres), in order:
+  1) database/migrate_staging_user_can_access_project_fix.sql
+  2) database/staging_repair_missing_rls_policies.sql  (only if policies still missing)
+
+--------------------------------------------------------------------------------
+PHASE 4 — Apply policies on STAGING
+--------------------------------------------------------------------------------
+[ ] STAGING: open database/prod_rls_policies_paste.sql -> paste all -> Run (postgres)
+[ ] Fix any errors (usually missing function -> back to Phase 1)
+
+--------------------------------------------------------------------------------
+PHASE 5 — Test staging app (same code as prod)
+--------------------------------------------------------------------------------
+[ ] Sign out -> sign in again on cyberconnectstaging.vercel.app
+[ ] Personal dashboard -> New Personal Project
+[ ] Team -> Upgrade/create team -> New Team Project
+
+--------------------------------------------------------------------------------
+WHY your JSON (Section C) was not enough
+--------------------------------------------------------------------------------
+- Section A: which tables have RLS on (you did this — good)
+- Section C: human-readable policy list (100 row limit in UI; NOT runnable SQL)
+- Section B: generates DROP POLICY + CREATE POLICY + ALTER TABLE ... ENABLE RLS
+
+Prod "projects" INSERT allows rows when auth.uid() is set and policies like
+"Allow insert for authenticated users" (auth.uid() IS NOT NULL) — much looser
+than staging migrate_staging_core_rls_policies.txt you ran before.
+
+--------------------------------------------------------------------------------
+OPTIONAL — Re-export if prod policies change later
+--------------------------------------------------------------------------------
+Repeat Phase 1 (functions if new names appear) -> Phase 2 -> Phase 3 -> Phase 4
+
+================================================================================
