@@ -1,5 +1,3 @@
-'use server'
-
 import { createClient } from '@/lib/supabase-server'
 import { getSession } from './auth'
 import { Project } from '@/types'
@@ -449,7 +447,7 @@ export async function deleteProjectAction(id: string) {
     if (!canDeleteTeamProject(priv)) throw new Error('Forbidden')
   }
 
-  const { error } = await supabase
+  const { error } = await supabase      
     .from('projects')
     .delete()
     .eq('id', id)

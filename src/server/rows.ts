@@ -1,5 +1,3 @@
-'use server'
-
 import { createClient } from '@/lib/supabase-server'
 import { getSession } from './auth'
 import {
@@ -399,7 +397,7 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
   if (tableName === 'task_rows') {
     if (clean.phase !== undefined && clean.phase !== null && String(clean.phase).trim() !== '') {
       const p = canonicalPhaseTypeValue(clean.phase)
-      if (p !== null) clean.phase = p
+      clean.phase = p !== null ? p : null
     }
     // assignee_id is nullable — do not default to current user (that blocked true "Unassigned" saves)
 
@@ -661,24 +659,43 @@ export async function getNextTaskCodeAction(projectId: string): Promise<string> 
   return computeNextTaskCode(codes)
 }
 
-function mapUniqueViolationError(tableName: string, err: unknown): Error {
-  const fullText = extractPostgrestErrorMessage(err).toLowerCase()
+function mapSheetRowSaveError(tableName: string, err: unknown): Error {
+  const fullText = extractPostgrestErrorMessage(err)
+  const lower = fullText.toLowerCase()
   const e = err as { code?: string }
   const code = e?.code ?? ''
   const isDup =
     code === '23505' ||
-    fullText.includes('duplicate key') ||
-    fullText.includes('unique constraint')
-  if (tableName === 'task_rows' && isDup && fullText.includes('idx_task_code_project')) {
+    lower.includes('duplicate key') ||
+    lower.includes('unique constraint')
+  if (lower.includes('access denied')) {
+    return new Error(
+      'You do not have permission to add or edit rows on this sheet. Ask a project PM or company admin.'
+    )
+  }
+  if (code === 'PGRST116' || lower.includes('0 rows') || lower.includes('cannot coerce')) {
+    return new Error(
+      'The row may have been saved but could not be loaded. Refresh the sheet; if it is missing, contact an admin about database access rules.'
+    )
+  }
+  if (lower.includes('invalid input value for enum')) {
+    return new Error(`Invalid value for a status or phase field. (${fullText})`)
+  }
+  if (tableName === 'task_rows' && isDup && lower.includes('idx_task_code_project')) {
     return new Error('duplicate_task_code')
   }
-  if (tableName === 'function_list_rows' && isDup && fullText.includes('idx_function_code_project')) {
+  if (tableName === 'function_list_rows' && isDup && lower.includes('idx_function_code_project')) {
     return new Error('Duplicate function code for this project')
   }
-  if (tableName === 'screen_list_rows' && isDup && fullText.includes('idx_screen_code_project')) {
+  if (tableName === 'screen_list_rows' && isDup && lower.includes('idx_screen_code_project')) {
     return new Error('Duplicate screen code for this project')
   }
-  return new Error(extractPostgrestErrorMessage(err))
+  return new Error(fullText || 'Database error')
+}
+
+/** @deprecated use mapSheetRowSaveError */
+function mapUniqueViolationError(tableName: string, err: unknown): Error {
+  return mapSheetRowSaveError(tableName, err)
 }
 
 export async function getSheetRowsAction(projectId: string, tabId: string): Promise<SheetRow[]> {
@@ -708,86 +725,119 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
   const tableName = TABLE_MAP[tabId]
   if (!tableName) throw new Error(`Unknown table for tab: ${tabId}`)
 
-  const session = await getSession()
-  if (!session) throw new Error('Unauthorized')
+  try {
+    const session = await getSession()
+    if (!session) throw new Error('Unauthorized')
 
-  const supabase = await createClient()
-  if (!(await verifyProjectAccess(supabase, row.project_id))) throw new Error('Forbidden')
-  await assertCanMutateTeamSheets(supabase, row.project_id)
+    const supabase = await createClient()
+    if (!(await verifyProjectAccess(supabase, row.project_id))) throw new Error('Forbidden')
+    await assertCanMutateTeamSheets(supabase, row.project_id)
 
-  const cleanedData = sanitizeRowData(row, tableName)
+    const cleanedData = sanitizeRowData(row, tableName)
 
-  const { data: profileForPriv } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('email', session.email)
-    .maybeSingle()
-  if (!profileForPriv) throw new Error('Unauthorized')
-  const teamPriv = await resolveTeamProjectPrivilegeForMutation(
-    supabase,
-    profileForPriv.id,
-    row.project_id
-  )
-  if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
+    const { data: profileForPriv } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', session.email)
+      .maybeSingle()
+    if (!profileForPriv) throw new Error('Unauthorized')
+    const teamPriv = await resolveTeamProjectPrivilegeForMutation(
+      supabase,
+      profileForPriv.id,
+      row.project_id
+    )
+    if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .update({ status: cleanedData.status })
+        .eq('id', row.id)
+        .eq('project_id', row.project_id)
+        .select()
+        .single()
+
+      if (error) {
+        console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
+        throw mapSheetRowSaveError(tableName, error)
+      }
+
+      return data as SheetRow
+    }
+
+    let payload: Record<string, unknown> = { ...cleanedData }
+    let isNewRow = true
+    if (tableName === 'task_rows') {
+      const allowed = await loadTeamProjectAssignableProfileIds(supabase, row.project_id);
+      if (allowed !== null) {
+        const aid = cleanedData.assignee_id;
+        if (typeof aid === 'string' && aid && !allowed.includes(aid)) {
+          payload = { ...cleanedData, assignee_id: null };
+        }
+      }
+
+      const p = payload as Record<string, unknown>
+      const tcIn = String(p.task_code ?? '').trim()
+      const { data: existing } = await supabase
+        .from('task_rows')
+        .select('task_code')
+        .eq('id', row.id)
+        .maybeSingle()
+      isNewRow = !existing
+      const existingCode = existing ? String((existing as { task_code: string }).task_code ?? '').trim() : ''
+
+      if (!tcIn) {
+        if (existingCode) {
+          p.task_code = existingCode
+        } else {
+          const codes = await fetchTaskCodesForProject(supabase, row.project_id)
+          p.task_code = computeNextTaskCode(codes)
+        }
+      }
+    }
+
+    if (isNewRow) {
+      delete payload.created_at
+      delete payload.updated_at
+    }
+
     const { data, error } = await supabase
       .from(tableName)
-      .update({ status: cleanedData.status })
-      .eq('id', row.id)
-      .eq('project_id', row.project_id)
+      .upsert(payload)
       .select()
       .single()
 
     if (error) {
       console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
-      throw mapUniqueViolationError(tableName, error)
+      throw mapSheetRowSaveError(tableName, error)
     }
 
-    return data as SheetRow
-  }
+    if (!data) {
+      const fallback = mergeExtrasIntoSheetRow({
+        ...payload,
+        project_id: row.project_id,
+      } as Record<string, unknown>)
+      if (tabId === 'tasks') return shapeTaskRowForClient(fallback as SheetRow)
+      return fallback as SheetRow
+    }
 
-  let payload: Record<string, unknown> = cleanedData
-  if (tableName === 'task_rows') {
-    const allowed = await loadTeamProjectAssignableProfileIds(supabase, row.project_id);
-    if (allowed !== null) {
-      const aid = cleanedData.assignee_id;
-      if (typeof aid === 'string' && aid && !allowed.includes(aid)) {
-        payload = { ...cleanedData, assignee_id: null };
+    const saved = data as SheetRow
+    if (tabId === 'tasks') return shapeTaskRowForClient(saved)
+    return saved
+  } catch (e) {
+    if (e instanceof Error) {
+      if (
+        e.message === 'Unauthorized' ||
+        e.message === 'Forbidden' ||
+        e.message === 'duplicate_task_code' ||
+        !e.message.includes('Server Components render')
+      ) {
+        throw e
       }
+      console.error('upsertSheetRowAction:', e)
+      throw new Error(e.message || 'Failed to save row')
     }
-
-    const p = payload as Record<string, unknown>
-    const tcIn = String(p.task_code ?? '').trim()
-    const { data: existing } = await supabase
-      .from('task_rows')
-      .select('task_code')
-      .eq('id', row.id)
-      .maybeSingle()
-    const existingCode = existing ? String((existing as { task_code: string }).task_code ?? '').trim() : ''
-
-    if (!tcIn) {
-      if (existingCode) {
-        p.task_code = existingCode
-      } else {
-        const codes = await fetchTaskCodesForProject(supabase, row.project_id)
-        p.task_code = computeNextTaskCode(codes)
-      }
-    }
+    console.error('upsertSheetRowAction unexpected:', e)
+    throw new Error('Failed to save row')
   }
-
-  const { data, error } = await supabase
-    .from(tableName)
-    .upsert(payload)
-    .select()
-    .single()
-
-  if (error) {
-    console.error(`DB Error in ${tableName}:`, JSON.stringify(error, null, 2))
-    throw mapUniqueViolationError(tableName, error)
-  }
-
-  const saved = data as SheetRow
-  if (tabId === 'tasks') return shapeTaskRowForClient(saved)
-  return saved
 }
 
 /**

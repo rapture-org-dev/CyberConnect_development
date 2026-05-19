@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { Project } from '@/types';
 import { UserRound, Plus, Circle, Pause, CheckCircle, Sparkles, Building2, Loader, X, Trash2, ArrowRight } from 'lucide-react';
-import { joinTeamByInviteCodeAction, purchaseTeamPlanAction } from '@/actions/teams';
-import { updateActiveRoleAction } from '@/actions/auth';
+import { joinTeamByInviteCodeAction, purchaseTeamPlanAction } from '@/lib/api/client';
+import { updateActiveRoleAction } from '@/lib/api/client';
 import { useRouter } from 'next/navigation';
 import { NewProjectModal } from '@/components/NewProjectModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';

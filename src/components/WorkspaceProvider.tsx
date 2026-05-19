@@ -3,23 +3,23 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, usePathname, useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { getSession, logoutAction } from '@/actions/auth';
-import { getProfiles, upgradeToAdminAction, getTeamMembersAction, getMyTeamMembershipsAction, getMyProfileAction, updateMyProfileAction } from '@/actions/profiles';
-import { getProjectsAction, createProjectAction, updateProjectAction, deleteProjectAction, getTeamIdBySlugAction } from '@/actions/projects';
+import { getSession, logoutAction } from '@/lib/api/client';
+import { getProfiles, upgradeToAdminAction, getTeamMembersAction, getMyTeamMembershipsAction, getMyProfileAction, updateMyProfileAction } from '@/lib/api/client';
+import { getProjectsAction, createProjectAction, updateProjectAction, deleteProjectAction, getTeamIdBySlugAction } from '@/lib/api/client';
 import {
   getSheetRowsAction,
   upsertSheetRowAction,
   upsertSheetRowsBatchAction,
   deleteSheetRowAction,
   deleteSheetRowsBatchAction,
-} from '@/actions/rows';
+} from '@/lib/api/client';
 import {
   setCachedProfiles,
   sheetTabs,
   type Language,
 } from '@/lib/data';
 import type { UserProfile, Project, SheetRow, SheetColumn, UserRole, TeamMembership } from '@/types';
-import { regenerateTeamInviteCodeAction, setTeamMemberRoleAction, updateTeamAction } from '@/actions/teams';
+import { regenerateTeamInviteCodeAction, setTeamMemberRoleAction, updateTeamAction } from '@/lib/api/client';
 import { clearLoginSessionStorage } from '@/lib/loginSession';
 
 interface WorkspaceContextType {
@@ -404,7 +404,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   }, [pathname, params.team_slug]);
 
   const handleAssignMember = useCallback(async (projectId: string, profileId: string, role: string) => {
-    const { assignProjectMemberAction } = await import('@/actions/projects');
+    const { assignProjectMemberAction } = await import('@/lib/api/client');
     await assignProjectMemberAction(projectId, profileId, role);
     const slug = resolveTeamSlugForRefresh();
     if (pathname.startsWith('/personal')) {
@@ -415,7 +415,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   }, [pathname, resolveTeamSlugForRefresh]);
 
   const handleRemoveMember = useCallback(async (projectId: string, profileId: string) => {
-    const { removeProjectMemberAction } = await import('@/actions/projects');
+    const { removeProjectMemberAction } = await import('@/lib/api/client');
     await removeProjectMemberAction(projectId, profileId);
     const slug = resolveTeamSlugForRefresh();
     if (pathname.startsWith('/personal')) {
@@ -489,7 +489,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
 
   const handleUpgrade = useCallback(async (teamName: string) => {
     if (!loggedInUser) return;
-    const { loginAction } = await import('@/actions/auth');
+    const { loginAction } = await import('@/lib/api/client');
     await upgradeToAdminAction();
     const activeTeamSlug = 'my-team';
     const updatedUser = { 
@@ -508,7 +508,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
 
   const refreshSheetColumnLayouts = useCallback(async (projectId: string) => {
     try {
-      const { getProjectSheetColumnLayoutsAction } = await import('@/actions/sheetColumnLayout');
+      const { getProjectSheetColumnLayoutsAction } = await import('@/lib/api/client');
       const map = await getProjectSheetColumnLayoutsAction(projectId);
       setSheetColumnLayouts((prev) => ({ ...prev, [projectId]: map }));
     } catch {
@@ -520,7 +520,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     setSheetLoadingProjects(prev => ({ ...prev, [projectId]: true }));
     const dataTabs = sheetTabs.filter(t => !t.isSpecialView);
     try {
-      const { getProjectSheetColumnLayoutsAction } = await import('@/actions/sheetColumnLayout');
+      const { getProjectSheetColumnLayoutsAction } = await import('@/lib/api/client');
       const [results, layoutMap] = await Promise.all([
         Promise.all(
           dataTabs.map((tab) =>
@@ -655,7 +655,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   }, [projects]);
 
   const refreshProject = useCallback(async (id: string) => {
-    const { getProjectByIdAction } = await import('@/actions/projects');
+    const { getProjectByIdAction } = await import('@/lib/api/client');
     const p = await getProjectByIdAction(id);
     if (p) {
       setProjects(prev => {
@@ -751,7 +751,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
   }, [loggedInUser, projects, workspaceScope]);
 
   const handleSetWorkspaceScope = useCallback(async (scope: 'team' | 'personal') => {
-    const { updateActiveRoleAction } = await import('@/actions/auth');
+    const { updateActiveRoleAction } = await import('@/lib/api/client');
     setProjects([]);
     setSheetData({});
     setSheetColumnLayouts({});

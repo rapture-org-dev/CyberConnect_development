@@ -1,6 +1,7 @@
 import { getGlobalTaskStats } from '@/lib/dal/stats';
 import AdminDashboardClient from './AdminDashboardClient';
-import { getProjectsAction } from '@/actions/projects';
+import { serverApiFetch } from '@/lib/api/server-fetch';
+import type { Project } from '@/types';
 import { createClient } from '@/lib/supabase-server';
 
 export default async function AdminDashboardPage(props: { params: Promise<{ team_slug: string }> }) {
@@ -19,7 +20,9 @@ export default async function AdminDashboardPage(props: { params: Promise<{ team
 
   // Passes that specific team_id into the getProjectsAction.
   // If fetching for a Team, the query MUST include .eq('workspace_type', 'team').eq('team_id', requested_team_id).
-  const initialProjects = teamId ? await getProjectsAction('team', teamId) : [];
+  const initialProjects = teamId
+    ? await serverApiFetch<Project[]>(`/api/projects?scope=team&teamId=${encodeURIComponent(teamId)}`)
+    : [];
 
   const stats = await getGlobalTaskStats(teamId);
 

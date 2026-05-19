@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ChevronRight, X, Loader } from 'lucide-react';
 import type { SheetTab, SheetRow, ImportValidationPreview } from '@/types';
-import { validateAndMapImportRows } from '@/actions/rows';
+import { validateAndMapImportRows } from '@/lib/api/client';
 import {
   getImportMappingTargetsForTab,
   matchJapaneseImportHeaderToKey,

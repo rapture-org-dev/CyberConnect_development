@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { Project } from '@/types';
 import { X, Loader } from 'lucide-react';
-import { updateTeamProjectCoreDetailsAction } from '@/actions/projects';
+import { updateTeamProjectCoreDetailsAction } from '@/lib/api/client';
 
 interface Props {
   project: Project;

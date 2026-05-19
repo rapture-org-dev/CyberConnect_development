@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase-server';
 import type { UserRole } from '@/types';
-import { getSession } from '@/actions/auth';
+import { getSession } from '@/server/auth';
 
 interface UserAccessRoles {
   isAdmin: boolean;

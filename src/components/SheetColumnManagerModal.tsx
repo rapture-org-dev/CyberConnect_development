@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
 import type { SheetColumn, SheetTab } from '@/types';
 import { generateCustomColumnKey, REQUIRED_COLUMN_KEYS } from '@/lib/sheetColumnLayout';
-import { saveProjectSheetColumnLayoutAction } from '@/actions/sheetColumnLayout';
+import { saveProjectSheetColumnLayoutAction } from '@/lib/api/client';
 import { translate, type Language } from '@/lib/data';
 
 const COL_TYPES: SheetColumn['type'][] = [

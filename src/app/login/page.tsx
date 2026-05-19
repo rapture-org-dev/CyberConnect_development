@@ -1,7 +1,7 @@
 'use client';
 
 import { LoginScreen } from '@/components/LoginScreen';
-import { loginAction } from '@/actions/auth';
+import { loginAction } from '@/lib/api/client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { UserProfile } from '@/types';
 import { Suspense } from 'react';
@@ -17,7 +17,7 @@ function LoginPageContent() {
     const activeTeamSlug = user.activeTeamSlug || 'my-team';
     
     // Establishing session with team slug support
-    const { loginAction } = await import('@/actions/auth');
+    const { loginAction } = await import('@/lib/api/client');
     await loginAction(user.email, user.role, user.accountKind || 'personal', activeRole, activeTeamSlug);
     
     // 2. Perform a hard redirect to the new specific path

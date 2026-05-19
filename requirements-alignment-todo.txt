@@ -1,0 +1,126 @@
+CyberConnect — Requirements alignment TODO
+Generated from codebase review (read-only assessment + follow-up fixes).
+Legend: Aligned | Mostly aligned | Partially | Not aligned / Not present
+
+================================================================================
+SECURITY
+================================================================================
+
+Requirement: Auth — Supabase session on protected workspace/admin routes
+Verdict: Mostly aligned
+Notes: src/middleware.ts (supabase.auth.getUser() and redirects for protected paths) and related auth flows support this pattern.
+TODO: Audit all workspace/admin routes are covered by middleware; confirm no client-only guards on sensitive pages.
+
+Requirement: Authz — server mutations match team/role rules
+Verdict: Partially
+Notes: Team/project privilege checks in src/lib/team-project-auth.ts and src/actions/rows.ts; coverage uneven — some team/profile actions looser than full UI role matrix parity (per review).
+TODO: Inventory server actions; align teams.ts / profiles.ts (and similar) with resolveTeamProjectPrivilege / canMutate* rules used in sheet paths.
+
+Requirement: Webhook shared-secret for sheet sync
+Verdict: Not present in code
+Notes: Sheet-sync webhook only in roadmap CSV/task files; no api/webhooks/... route. Only src/app/api/projects/route.ts found under src/app/api/.
+TODO: Add POST webhook (e.g. /api/webhooks/sheet-sync), validate shared-secret header, map payload through sanitizeRowData update path.
+
+================================================================================
+DATA INTEGRITY
+================================================================================
+
+Requirement: Code uniqueness + duplicate handling
+Verdict: Partially
+Notes: DB constraints and import validation (database/*_rows.sql, src/actions/rows.ts). Preview surfaces exact / in-file duplicates; rewriteCodeIfClaimed may rewrite instead of strictly blocking all duplicate scenarios.
+TODO: Decide product rule: block vs flag vs rewrite; align UI preview and finalize with that rule.
+
+Requirement: JA-only mappings must not wipe English
+Verdict: Aligned
+Notes: Merge/finalize merges onto existing rows with full sanitization; finalizeImportRows avoids EN wipe when only *_ja columns mapped (src/actions/rows.ts).
+TODO: None unless new import paths bypass merge/finalize.
+
+Requirement: sanitizeRowData before persistence (import + webhook)
+Verdict: Partially
+Notes: sanitizeRowData on import/update in src/actions/rows.ts. Webhook path N/A until webhook exists.
+TODO: Implement webhook updates through same sanitizeRowData path as imports.
+
+================================================================================
+USABILITY
+================================================================================
+
+Requirement: Long import — overlay/spinner + no double submit
+Verdict: Aligned
+Notes: ImportModal, ColumnMappingUI, conflict UI — loading states and disabled actions during work.
+TODO: None unless new import entry points skip these components.
+
+Requirement: Preview — ready / merge / no_match / duplicate_in_file with counts + styling
+Verdict: Aligned
+Notes: ImportPreviewModal, types, server preview in src/actions/rows.ts.
+TODO: None unless preview statuses need renaming to match spec ("ready" vs "pass").
+
+================================================================================
+LOCALIZATION
+================================================================================
+
+Requirement: Japanese headers normalized → EN/JA fields
+Verdict: Aligned
+Notes: normalizeImportHeader, Japanese matching, ColumnMappingUI — src/lib/data.ts.
+TODO: None unless new tabs need additional synonym maps.
+
+================================================================================
+COMPATIBILITY
+================================================================================
+
+Requirement: User guidance — UTF-8 CSV + suggest .xlsx if mojibake
+Verdict: Not really (UI)
+Notes: src/lib/importSheet.ts decodes UTF-8, Shift_JIS, EUC-JP, ISO-2022-JP and mojibake recovery; ImportModal copy does not tell users UTF-8 or "use .xlsx if garbled".
+TODO: Add short ImportModal help text (UTF-8 for CSV; prefer .xlsx if characters look wrong).
+
+Requirement: XLSX — pick worksheet
+Verdict: Not aligned
+Notes: ImportModal.tsx uses workbook.SheetNames[0] only.
+TODO: UI to select sheet before parse; pass chosen name into parseWorksheetForImport.
+
+================================================================================
+RELIABILITY
+================================================================================
+
+Requirement: Redirects — legacy role URLs + incomplete session, no leaked protected content
+Verdict: Mostly aligned
+Notes: src/middleware.ts, src/app/page.tsx, src/app/switch-role/page.tsx.
+TODO: Spot-check edge cases (stale cookies, deep links to old /pm /dev /client paths).
+
+================================================================================
+MAINTAINABILITY
+================================================================================
+
+Requirement: Mapping / bilingual / duplicate / merge logic centralized
+Verdict: Partially
+Notes: src/lib/data.ts, src/lib/importSheet.ts; some auto-match still in ColumnMappingUI.tsx.
+TODO: Move remaining header auto-match into shared lib if desired.
+
+================================================================================
+PERFORMANCE
+================================================================================
+
+Requirement: Batch delete/import — fewer round trips + clear completion
+Verdict: Mostly aligned (updated after batch status-only fix)
+Notes: Chunked upserts, .in() batch delete, bisect fallback, ImportResults in src/actions/rows.ts. Status-only dev/assignee batch path now uses chunked bulk upsert (commit perf(sheets): batch status-only upserts).
+TODO: Re-verify any other batch code paths for per-row HTTP loops; keep completion UI deterministic on failures.
+
+================================================================================
+SUMMARY — items needing work to fully align
+================================================================================
+
+[ ] Authz parity across all server actions (not only sheets)
+[ ] Webhook + shared-secret + sanitizeRowData
+[ ] Code duplicate policy (block/flag vs rewriteCodeIfClaimed)
+[ ] Import UI: UTF-8 / mojibake guidance
+[ ] Import UI: XLSX worksheet picker
+[ ] Optional: centralize ColumnMappingUI auto-match
+[ ] Optional: middleware/redirect edge-case audit
+
+Already aligned or mostly done without listed TODO:
+- Auth (middleware session)
+- JA merge preserves EN
+- Import loading / no double submit
+- Import preview states + styling
+- Japanese header normalization
+- Redirects (legacy roles, incomplete session)
+- Batch import/delete performance (primary paths + status-only batch)

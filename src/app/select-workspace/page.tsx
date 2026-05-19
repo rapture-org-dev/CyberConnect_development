@@ -3,10 +3,10 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { getSession, updateActiveRoleAction } from '@/actions/auth';
-import { getMyTeamMembershipsAction, getMyProfileAction } from '@/actions/profiles';
-import { isTeamOwnerAction } from '@/actions/teams';
-import { joinTeamByInviteCodeAction } from '@/actions/teams';
+import { getSession, updateActiveRoleAction } from '@/lib/api/client';
+import { getMyTeamMembershipsAction, getMyProfileAction } from '@/lib/api/client';
+import { isTeamOwnerAction } from '@/lib/api/client';
+import { joinTeamByInviteCodeAction } from '@/lib/api/client';
 import type { TeamMembership, UserProfile } from '@/types';
 import { Building2, UserRound, Sparkles, Loader, ArrowRight, Plus, X } from 'lucide-react';
 

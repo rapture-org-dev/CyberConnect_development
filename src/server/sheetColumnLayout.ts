@@ -1,5 +1,3 @@
-'use server'
-
 import { createClient } from '@/lib/supabase-server'
 import { getSession } from './auth'
 import type { SheetColumn } from '@/types'

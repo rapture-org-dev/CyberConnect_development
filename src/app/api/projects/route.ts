@@ -1,37 +1,32 @@
-import { createClient } from '@/lib/supabase-server'
-import { NextResponse } from 'next/server'
+import {
+  getProjectsAction,
+  createProjectAction,
+} from '@/server/projects'
+import { apiError, apiJson, errorMessage, readJsonBody } from '@/lib/api/response'
+import type { Project } from '@/types'
 
-/**
- * API Route for fetching projects. 
- * This can be consumed by the separate Vite app or other clients.
- * It uses the same server-side Supabase client as the Server Actions.
- */
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*', // In production, replace with specific origins
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
-
-export async function GET() {
-  const supabase = await createClient()
-  
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*, project_members(profile_id)')
-  
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500, headers: CORS_HEADERS })
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const scope = searchParams.get('scope') as 'team' | 'personal' | null
+  const teamId = searchParams.get('teamId') ?? undefined
+  const teamSlug = searchParams.get('teamSlug') ?? undefined
+  if (!scope || (scope !== 'team' && scope !== 'personal')) {
+    return apiError('scope must be team or personal', 400)
   }
-  
-  const mapped = (data as Record<string, unknown>[]).map(p => ({
-    ...p,
-    assignedDevIds: (p.project_members as { profile_id: string }[])?.map((m) => m.profile_id) || []
-  }))
-
-  return NextResponse.json(mapped, { headers: CORS_HEADERS })
+  try {
+    const projects = await getProjectsAction(scope, teamId, teamSlug)
+    return apiJson(projects)
+  } catch (err) {
+    return apiError(errorMessage(err), 500)
+  }
 }
 
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: CORS_HEADERS })
+export async function POST(request: Request) {
+  const body = await readJsonBody<Partial<Project>>(request)
+  if (!body) return apiError('Invalid body', 400)
+  const result = await createProjectAction(body)
+  if (!result.success) {
+    return apiJson(result, 400)
+  }
+  return apiJson(result, 201)
 }

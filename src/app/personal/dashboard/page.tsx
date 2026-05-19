@@ -4,7 +4,7 @@ import { useWorkspace } from '@/components/WorkspaceProvider';
 import { PersonalView } from '@/components/dashboard/views/PersonalView';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { isTeamOwnerAction } from '@/actions/teams';
+import { isTeamOwnerAction } from '@/lib/api/client';
 
 export default function PersonalDashboardPage() {
   const router = useRouter();

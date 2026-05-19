@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSession } from '@/actions/auth';
-import { getMyProfileAction } from '@/actions/profiles';
+import { getSession } from '@/lib/api/client';
+import { getMyProfileAction } from '@/lib/api/client';
 
 export default function HomePage() {
   const router = useRouter();

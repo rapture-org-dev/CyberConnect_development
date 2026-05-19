@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect, useMemo, type CSSProperties } from 'react';
 import type { SheetTab, SheetColumn, SheetRow, Project, ImportConflict, ImportValidationPreview } from '@/types';
-import { finalizeImportRows } from '@/actions/rows';
+import { finalizeImportRows } from '@/lib/api/client';
 import { useWorkspace } from '@/components/WorkspaceProvider';
 import {
   getProjectAssignableProfiles,

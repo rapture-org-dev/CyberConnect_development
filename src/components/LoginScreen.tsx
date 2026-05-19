@@ -3,7 +3,7 @@ import type { UserRole, UserProfile } from '@/types';
 import { Shield, Briefcase, Code, Users, ArrowLeft, Loader, LogOut, AlertCircle, UserRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { peekResumeRoleSnapshot, consumeResumeRoleFlag, saveDemoGateEmail } from '@/lib/loginSession';
-import { getUserAccessRolesAction } from '@/actions/auth';
+import { getUserAccessRolesAction } from '@/lib/api/client';
 import { useSearchParams } from 'next/navigation';
 
 interface Props {

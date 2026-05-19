@@ -70,7 +70,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Supabase session exists but the app login flow (HTTP-only cookies from loginAction) has not
+  // Supabase session exists but the app login flow (HTTP-only cookies from POST /api/auth/login) has not
   // finished yet — keep the user on /login instead of skipping straight to select-workspace.
   if (user && !hasAppSession) {
     if (isLoginPage || pathname.startsWith('/api')) {

@@ -1,5 +1,3 @@
-'use server'
-
 import { createClient } from '@/lib/supabase-server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSession } from './auth'

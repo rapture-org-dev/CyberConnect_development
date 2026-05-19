@@ -12,7 +12,7 @@ import {
   type ProjectSheetRole,
   isTasksTab,
 } from '@/lib/data';
-import { getNextTaskCodeAction } from '@/actions/rows';
+import { getNextTaskCodeAction } from '@/lib/api/client';
 import { RegisteredCodePicker } from '@/components/RegisteredCodePicker';
 
 interface Props {
@@ -134,6 +134,12 @@ export function AddRowDrawer({
       const msg = err instanceof Error ? err.message : ''
       if (msg === 'duplicate_task_code') {
         setSaveError(translate('duplicate_task_code', language))
+      } else if (msg.includes('Server Components render')) {
+        setSaveError(
+          language === 'ja'
+            ? '保存に失敗しました。タスクIDの重複、権限、またはデータベース設定を確認してください。'
+            : 'Save failed. Check for a duplicate task ID, your permissions, or ask an admin to verify database access.'
+        )
       } else if (msg) {
         setSaveError(msg)
       } else {

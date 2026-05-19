@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, AlertCircle, Loader } from 'lucide-react';
 import type { ImportConflict, ConflictChoice } from '@/types';
-import { finalizeImportRows } from '@/actions/rows';
+import { finalizeImportRows } from '@/lib/api/client';
 import type { SheetRow } from '@/types';
 import { translate, type Language } from '@/lib/data';
 

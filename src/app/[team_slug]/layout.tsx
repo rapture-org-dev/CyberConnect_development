@@ -6,7 +6,7 @@ import { WorkspaceProvider, useWorkspace } from '@/components/WorkspaceProvider'
 import { sheetTabs, isSheetBundleComplete } from '@/lib/data';
 import { Suspense, useCallback, useEffect, useTransition } from 'react';
 import { translate } from '@/lib/data';
-import { updateActiveRoleAction } from '@/actions/auth';
+import { updateActiveRoleAction } from '@/lib/api/client';
 
 function TeamRoleLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
