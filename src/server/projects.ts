@@ -228,18 +228,30 @@ export async function createProjectAction(project: Partial<Project>): Promise<{ 
     if (!session) return { success: false, error: 'Unauthorized' }
     
     const supabase = await createClient()
-    
-    // Fetch profile
+
+    const { data: { user: authUser }, error: authUserError } = await supabase.auth.getUser()
+    if (authUserError || !authUser) {
+      return {
+        success: false,
+        error: 'Supabase session missing. Sign out, sign in again, then retry.',
+      }
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('id')
-      .eq('email', session.email)
+      .eq('id', authUser.id)
       .single()
 
     if (!profile) return { success: false, error: 'User profile not found' }
     
     const activeRole = session.activeWorkspaceRole || session.role
-    const isPersonal = project.workspace_type === 'personal' || activeRole === 'personal'
+    const explicitTeam = project.workspace_type === 'team'
+    const explicitPersonal = project.workspace_type === 'personal'
+    const isPersonal =
+      explicitPersonal ||
+      (!explicitTeam &&
+        (session.accountKind === 'personal' || activeRole === 'personal'))
     
     // Resolve Team ID from context
     let teamId: string | null = null;
@@ -261,7 +273,7 @@ export async function createProjectAction(project: Partial<Project>): Promise<{ 
       ...project,
       status: project.status || 'active',
       workspace_type: isPersonal ? 'personal' : 'team',
-      owner_id: profile.id,
+      owner_id: authUser.id,
       team_id: isPersonal ? null : teamId,
     }
 

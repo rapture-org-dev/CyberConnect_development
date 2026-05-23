@@ -1,10 +1,8 @@
 import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase-server'
 
 /**
- * Simulated authentication actions to bridge the gap between 
- * client-side localStorage/sessionStorage and a real backend.
- * These actions set HTTP-only cookies that the server-side 
- * Supabase client and other Server Actions can use.
+ * App session cookies (cyberconnect_*) plus Supabase Auth cookies for RLS (auth.uid()).
  */
 
 import { getUserAccessRoles } from '@/lib/roles'
@@ -15,7 +13,26 @@ export async function getUserAccessRolesAction(userId: string, teamSlug?: string
   return await getUserAccessRoles(userId, teamSlug);
 }
 
-export async function loginAction(email: string, role: string, accountKind: 'team' | 'personal', activeWorkspaceRole?: string, activeTeamSlug?: string) {
+export async function loginAction(
+  email: string,
+  role: string,
+  accountKind: 'team' | 'personal',
+  activeWorkspaceRole?: string,
+  activeTeamSlug?: string,
+  accessToken?: string,
+  refreshToken?: string
+) {
+  if (accessToken && refreshToken) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    })
+    if (error) {
+      console.error('loginAction setSession failed:', error.message)
+    }
+  }
+
   const cookieStore = await cookies()
   
   // Set session cookies
@@ -107,6 +124,13 @@ export async function clearRoleSessionAction() {
 }
 
 export async function logoutAction() {
+  try {
+    const supabase = await createClient()
+    await supabase.auth.signOut()
+  } catch {
+    // ignore
+  }
+
   const cookieStore = await cookies()
   
   // Wipe all session-related cookies

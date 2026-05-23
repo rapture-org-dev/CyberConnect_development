@@ -163,17 +163,28 @@ function LoginScreenContent({ onLogin }: Props) {
         return;
       }
 
+      const teamSlug = searchParams.get('team');
+      const accountKind = teamSlug ? 'team' : 'personal';
+      const workspaceRole = teamSlug ? 'admin' : 'personal';
+
+      const { syncAppLoginSession } = await import('@/lib/api/client');
+      await syncAppLoginSession(
+        (profile as UserProfile).email,
+        'pm',
+        accountKind,
+        workspaceRole,
+        teamSlug || undefined
+      );
+
       setAuthenticating(false);
       saveDemoGateEmail(loginEmail);
-      
-      const teamSlug = searchParams.get('team');
 
       // Personal-First Login
       onLogin({ 
         ...profile as UserProfile, 
-        role: 'pm', 
-        accountKind: teamSlug ? 'team' : 'personal', 
-        activeWorkspaceRole: teamSlug ? 'admin' : 'personal',
+        role: 'pm',
+        accountKind,
+        activeWorkspaceRole: workspaceRole,
         activeTeamSlug: teamSlug || undefined
       });
     } catch {

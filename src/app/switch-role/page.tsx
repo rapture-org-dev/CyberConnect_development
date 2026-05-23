@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { loginAction, getSession } from '@/lib/api/client';
+import { syncAppLoginSession, getSession } from '@/lib/api/client';
 import type { UserProfile } from '@/types';
 import { Loader, ArrowLeft } from 'lucide-react';
 
@@ -37,7 +37,7 @@ function SwitchRoleContent() {
         setProfile(profileData as UserProfile);
         const slug = teamSlug || session.activeTeamSlug;
         if (slug) {
-          await loginAction(profileData.email, profileData.role, 'team', 'admin', slug);
+          await syncAppLoginSession(profileData.email, profileData.role, 'team', 'admin', slug);
           router.replace(`/${slug}/admin/dashboard`);
           return;
         }
@@ -49,7 +49,7 @@ function SwitchRoleContent() {
 
   const handlePersonal = async () => {
     if (!profile) return;
-    await loginAction(profile.email, profile.role, 'personal', 'personal', undefined);
+    await syncAppLoginSession(profile.email, profile.role, 'personal', 'personal', undefined);
     router.push('/personal/dashboard');
   };
 

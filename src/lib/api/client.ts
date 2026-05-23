@@ -3,6 +3,7 @@
  * should go through these functions (not Server Actions).
  */
 import { apiFetch } from '@/lib/api/http'
+import { supabase } from '@/lib/supabase'
 import type { Project, SheetColumn, SheetRow, TeamMembership, UserProfile } from '@/types'
 import type { TeamProjectCoreDetailsInput } from '@/server/projects'
 import type { FinalizeImportRowsOptions, ValidateImportRowsOptions } from '@/server/rows'
@@ -25,16 +26,46 @@ export async function getSession(): Promise<AppSession> {
   return apiFetch<AppSession>('/api/auth/session')
 }
 
-export async function loginAction(
+/** App cookies + Supabase session cookies (required for Postgres RLS auth.uid()). */
+export async function syncAppLoginSession(
   email: string,
   role: string,
   accountKind: 'team' | 'personal',
   activeWorkspaceRole?: string,
   activeTeamSlug?: string
 ): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession()
+  await loginAction(
+    email,
+    role,
+    accountKind,
+    activeWorkspaceRole,
+    activeTeamSlug,
+    session?.access_token,
+    session?.refresh_token
+  )
+}
+
+export async function loginAction(
+  email: string,
+  role: string,
+  accountKind: 'team' | 'personal',
+  activeWorkspaceRole?: string,
+  activeTeamSlug?: string,
+  accessToken?: string,
+  refreshToken?: string
+): Promise<void> {
   await apiFetch('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, role, accountKind, activeWorkspaceRole, activeTeamSlug }),
+    body: JSON.stringify({
+      email,
+      role,
+      accountKind,
+      activeWorkspaceRole,
+      activeTeamSlug,
+      accessToken,
+      refreshToken,
+    }),
   })
 }
 

@@ -7,6 +7,8 @@ type Body = {
   accountKind: 'team' | 'personal'
   activeWorkspaceRole?: string
   activeTeamSlug?: string
+  accessToken?: string
+  refreshToken?: string
 }
 
 export async function POST(request: Request) {
@@ -19,7 +21,9 @@ export async function POST(request: Request) {
     body.role,
     body.accountKind,
     body.activeWorkspaceRole,
-    body.activeTeamSlug
+    body.activeTeamSlug,
+    body.accessToken,
+    body.refreshToken
   )
   return apiJson({ ok: true })
 }

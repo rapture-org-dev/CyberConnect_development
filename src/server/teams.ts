@@ -91,12 +91,19 @@ export async function purchaseTeamPlanAction(teamName: string, teamSlug: string)
     if (!session) return { success: false, error: 'Unauthorized' }
     
     const supabase = await createClient()
-    
-    // 1. Get profile
+
+    const { data: { user: authUser }, error: authUserError } = await supabase.auth.getUser()
+    if (authUserError || !authUser) {
+      return {
+        success: false,
+        error: 'Supabase session missing. Sign out, sign in again, then retry.',
+      }
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('id')
-      .eq('email', session.email)
+      .eq('id', authUser.id)
       .single()
 
     if (!profile) return { success: false, error: 'User profile not found' }
@@ -107,7 +114,7 @@ export async function purchaseTeamPlanAction(teamName: string, teamSlug: string)
       .insert({
         name: teamName,
         slug: teamSlug,
-        owner_id: profile.id,
+        owner_id: authUser.id,
         invite_code: generateInviteCode()
       })
       .select()
@@ -123,7 +130,7 @@ export async function purchaseTeamPlanAction(teamName: string, teamSlug: string)
       .from('team_members')
       .insert({
         team_id: team.id,
-        profile_id: profile.id,
+        profile_id: authUser.id,
         role: 'admin'
       })
 
@@ -248,7 +255,7 @@ export async function setTeamMemberRoleAction(
       if (directError) throw directError
       if (!updated?.length) {
         throw new Error(
-          'Role was not updated. Run database/migrate_set_team_member_role.sql in Supabase SQL editor, then try again.'
+          'Role was not updated. Run database/cyberconnect_schema.sql (or archive/migrate_set_team_member_role.sql) in Supabase SQL editor, then try again.'
         )
       }
     } else {

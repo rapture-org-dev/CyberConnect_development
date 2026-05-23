@@ -70,6 +70,11 @@ const SHEET_ROW_INDEX_CELL =
 const SHEET_CHECKBOX_CELL =
   'sticky left-14 z-30 w-12 min-w-[3rem] max-w-[3rem] shrink-0 box-border px-0 align-middle border-r border-surface-800/80';
 
+/** Sticky header row (per-`th` — `border-collapse` breaks `thead` sticky in many browsers). */
+const SHEET_HEADER_CELL = 'sticky top-0 z-20 bg-surface-900';
+const SHEET_ROW_INDEX_HEADER = `${SHEET_ROW_INDEX_CELL} top-0 z-40 bg-surface-900`;
+const SHEET_CHECKBOX_HEADER = `${SHEET_CHECKBOX_CELL} top-0 z-40 bg-surface-900`;
+
 /** Pixel widths matching frozen columns (w-14 / w-12) for table `min-width` math. */
 const SHEET_ROW_INDEX_PX = 56;
 const SHEET_CHECKBOX_COL_PX = 48;
@@ -468,21 +473,21 @@ export function GenericSheet({
 
       <div className="flex-1 overflow-auto">
         <table
-          className="border-collapse"
+          className="border-separate border-spacing-0"
           style={{
             tableLayout: 'fixed',
             width: sheetTableMinWidthPx,
           }}
         >
-          <thead className="sticky top-0 z-10">
+          <thead>
             <tr className="bg-surface-900 border-b border-surface-700">
               <th
-                className={`${SHEET_ROW_INDEX_CELL} py-3 text-center bg-surface-900`}
+                className={`${SHEET_ROW_INDEX_HEADER} py-3 text-center`}
               >
                 <span className="text-gray-500 text-base">#</span>
               </th>
               {showBatchDelete && (
-                <th className={`${SHEET_CHECKBOX_CELL} bg-surface-900 py-3`}>
+                <th className={`${SHEET_CHECKBOX_HEADER} py-3`}>
                   <div className="flex h-full w-full items-center justify-center">
                     <input
                       type="checkbox"
@@ -501,7 +506,7 @@ export function GenericSheet({
                 return (
                 <th
                   key={c.displayKey}
-                  className={`px-3 py-3 text-left cursor-pointer group select-none ${sheetDataCellVerticalAlign(sourceColForHead.type, c.width)}`}
+                  className={`${SHEET_HEADER_CELL} px-3 py-3 text-left cursor-pointer group select-none ${sheetDataCellVerticalAlign(sourceColForHead.type, c.width)}`}
                   style={sheetDataColumnStyle(c.width, sourceColForHead.type)}
                   onClick={() => handleSort(c.actualKey)}
                 >
@@ -525,7 +530,7 @@ export function GenericSheet({
               })}
               {canDeleteRow && (
                 <th
-                  className="px-2 py-3 align-middle"
+                  className={`${SHEET_HEADER_CELL} px-2 py-3 align-middle`}
                   style={{ width: SHEET_DELETE_COL_PX, minWidth: SHEET_DELETE_COL_PX, maxWidth: SHEET_DELETE_COL_PX }}
                 />
               )}

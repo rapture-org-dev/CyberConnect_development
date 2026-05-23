@@ -489,7 +489,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
 
   const handleUpgrade = useCallback(async (teamName: string) => {
     if (!loggedInUser) return;
-    const { loginAction } = await import('@/lib/api/client');
+    const { syncAppLoginSession } = await import('@/lib/api/client');
     await upgradeToAdminAction();
     const activeTeamSlug = 'my-team';
     const updatedUser = { 
@@ -499,7 +499,13 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
       activeTeamSlug
     };
     
-    await loginAction(updatedUser.email, updatedUser.role, updatedUser.accountKind, 'admin', activeTeamSlug);
+    await syncAppLoginSession(
+      updatedUser.email,
+      updatedUser.role,
+      updatedUser.accountKind,
+      'admin',
+      activeTeamSlug
+    );
     
     setLoggedInUser(updatedUser);
     setWorkspaceScope('team');
