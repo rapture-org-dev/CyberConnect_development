@@ -126,17 +126,15 @@ export function detectTextLanguage(text: string): 'en' | 'ja' {
   return 'en'
 }
 
-/** Value shown in a single bilingual input (prefer UI language, fallback other). */
+/** Value shown in a single bilingual edit input (active language column only). */
 export function getMergedBilingualFieldValue(
   row: Record<string, unknown>,
   enKey: string,
   jaKey: string,
   lang: 'en' | 'ja'
 ): string {
-  const en = str(row[enKey])
-  const ja = str(row[jaKey])
-  if (lang === 'ja') return ja || en
-  return en || ja
+  if (lang === 'ja') return str(row[jaKey])
+  return str(row[enKey])
 }
 
 function str(val: unknown): string {
@@ -152,6 +150,9 @@ export function applyUserBilingualInput(
   lang: 'en' | 'ja',
   value: string
 ): Record<string, unknown> {
+  if (value.trim() === '') {
+    return { ...prev, [enKey]: '', [jaKey]: '' }
+  }
   if (lang === 'ja') return { ...prev, [jaKey]: value }
   return { ...prev, [enKey]: value }
 }
