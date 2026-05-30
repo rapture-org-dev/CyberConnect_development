@@ -11,6 +11,8 @@ import { computeNextTaskCode } from '@/lib/taskCodes'
 import { recoverUtf8MisreadAsLatin1, stripTextNuls } from '@/lib/importSheet'
 import { TABLE_NATIVE_KEYS } from '@/lib/tableNativeKeys'
 import { mergeExtrasIntoSheetRow } from '@/lib/sheetRows'
+import { applyBilingualAutoTranslateBatch, applyBilingualAutoTranslateToRow } from '@/server/bilingualAutoTranslate'
+import { resolveImportFieldKey } from '@/lib/data'
 
 /**
  * Server-side actions for managing Sheet Rows across all tables.
@@ -746,6 +748,20 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
       profileForPriv.id,
       row.project_id
     )
+
+    if (!isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
+      const { data: existingRow } = await supabase
+        .from(tableName)
+        .select('*')
+        .eq('id', row.id)
+        .eq('project_id', row.project_id)
+        .maybeSingle()
+      const existingMerged = existingRow
+        ? mergeExtrasIntoSheetRow(existingRow as Record<string, unknown>)
+        : null
+      await applyBilingualAutoTranslateToRow(tabId, cleanedData, existingMerged)
+    }
+
     if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
       const { data, error } = await supabase
         .from(tableName)
@@ -999,6 +1015,21 @@ export async function upsertSheetRowsBatchAction(
     payloads.push(cleanedData)
   }
 
+  const existingById = new Map<string, Record<string, unknown>>()
+  if (ids.length > 0) {
+    const { data: existingRows } = await supabase
+      .from(tableName)
+      .select('*')
+      .eq('project_id', projectId)
+      .in('id', ids)
+    for (const ex of existingRows ?? []) {
+      const rec = mergeExtrasIntoSheetRow(ex as Record<string, unknown>)
+      const id = String(rec.id ?? '')
+      if (id) existingById.set(id, rec)
+    }
+  }
+  await applyBilingualAutoTranslateBatch(tabId, payloads, existingById)
+
   const savedRows: SheetRow[] = []
 
   const upsertChunkOrBisect = async (chunk: Record<string, unknown>[]): Promise<void> => {
@@ -1130,14 +1161,21 @@ export async function validateAndMapImportRows(
 
     for (const [excelCol, sheetColKey] of Object.entries(columnMapping)) {
       if (sheetColKey) {
-        sheetRow[sheetColKey] = excelRow[excelCol] ?? ''
+        const canonicalKey = resolveImportFieldKey(tabId, sheetColKey)
+        sheetRow[canonicalKey] = excelRow[excelCol] ?? ''
       }
     }
 
     return sheetRow as SheetRow
   })
 
-  const comparableKeys = [...new Set(Object.values(columnMapping).filter((key): key is string => !!key))]
+  const comparableKeys = [
+    ...new Set(
+      Object.values(columnMapping)
+        .filter((key): key is string => !!key)
+        .map((key) => resolveImportFieldKey(tabId, key))
+    ),
+  ]
 
   const resolvedCodeField =
     mergeMode && businessField
@@ -1348,10 +1386,10 @@ export async function finalizeImportRows(
         }
 
         preparedPayloads.push(cleanedData)
-      } catch (err: any) {
+      } catch (err: unknown) {
         failed.push({
           rowData: row as Record<string, unknown>,
-          reason: err?.message || 'Unknown error',
+          reason: err instanceof Error ? err.message : 'Unknown error',
         })
       }
     }
@@ -1396,14 +1434,22 @@ export async function finalizeImportRows(
 
         rememberClaimedCode(tableName, cleanedData, claimedCodes)
         preparedPayloads.push(cleanedData)
-      } catch (err: any) {
+      } catch (err: unknown) {
         failed.push({
-          rowData: row,
-          reason: err.message || 'Unknown error',
+          rowData: row as Record<string, unknown>,
+          reason: err instanceof Error ? err.message : 'Unknown error',
         })
       }
     }
   }
+
+  const existingByIdForTranslate = new Map<string, Record<string, unknown>>()
+  for (const r of existingRowsArray) {
+    const rec = mergeExtrasIntoSheetRow(r as Record<string, unknown>)
+    const id = String(rec.id ?? '')
+    if (id) existingByIdForTranslate.set(id, rec)
+  }
+  await applyBilingualAutoTranslateBatch(tabId, preparedPayloads, existingByIdForTranslate)
 
   /**
    * Upsert rows in bulk; if the batch fails (any row error, size/timeout, etc.), split the chunk

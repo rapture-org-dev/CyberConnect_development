@@ -75,11 +75,17 @@ export function ColumnMappingUI({
           .trim()
           .toLowerCase();
         match = sheetColumns.find((sc) => {
-          if (!sc.key.endsWith('_ja')) return false;
-          const base = tab.columns.find((c) => c.key === sc.key.replace(/_ja$/, ''));
-          if (!base) return false;
+          const base = tab.columns.find((c) => c.key === sc.key);
+          if (!base?.labelJa) return false;
           const bl = base.label.toLowerCase();
-          return stripped.length > 0 && (stripped.includes(bl) || bl.includes(stripped));
+          const bja = base.labelJa.toLowerCase();
+          return (
+            stripped.length > 0 &&
+            (stripped.includes(bl) ||
+              bl.includes(stripped) ||
+              stripped.includes(bja) ||
+              bja.includes(stripped))
+          );
         });
       }
       if (match) {

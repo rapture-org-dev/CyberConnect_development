@@ -14,6 +14,11 @@ import {
 } from '@/lib/data';
 import { getNextTaskCodeAction } from '@/lib/api/client';
 import { RegisteredCodePicker } from '@/components/RegisteredCodePicker';
+import {
+  applyUserBilingualInput,
+  formatSelectCellDisplayValue,
+  getMergedBilingualFieldValue,
+} from '@/lib/bilingualFields';
 
 interface Props {
   tab: SheetTab;
@@ -150,10 +155,25 @@ export function AddRowDrawer({
     }
   };
 
-  const renderFieldControl = (col: SheetTab['columns'][number], value: string, jaKey?: string) => {
+  const renderFieldControl = (
+    col: SheetTab['columns'][number],
+    value: string,
+    bilingual?: { enKey: string; jaKey: string }
+  ) => {
     const setValue = (nextValue: string) => {
-      const key = jaKey ?? col.key;
-      setFormData((prev) => ({ ...prev, [key]: nextValue }));
+      if (bilingual) {
+        setFormData((prev) =>
+          applyUserBilingualInput(
+            prev,
+            bilingual.enKey,
+            bilingual.jaKey,
+            language,
+            nextValue
+          ) as Record<string, string>
+        );
+        return;
+      }
+      setFormData((prev) => ({ ...prev, [col.key]: nextValue }));
     };
 
     const editable = canEditField(col.key);
@@ -212,7 +232,7 @@ export function AddRowDrawer({
         >
           {(col.options ?? []).map((opt) => (
             <option key={opt} value={opt}>
-              {translate(opt, language)}
+              {formatSelectCellDisplayValue(tab.id, col.key, opt, language)}
             </option>
           ))}
         </select>
@@ -226,7 +246,7 @@ export function AddRowDrawer({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           disabled={!editable || savePending}
-          className={`w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none ${jaKey ? 'min-h-[100px]' : ''} ${!editable ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none min-h-[100px] ${!editable ? 'opacity-50 cursor-not-allowed' : ''}`}
         />
       );
     }
@@ -293,8 +313,9 @@ export function AddRowDrawer({
           )}
           <div className="overflow-y-auto p-5 custom-scrollbar space-y-4">
             {fieldSpecs.map(({ col, jaKey }) => {
-              const value = formData[col.key] ?? '';
-              const jaValue = jaKey ? (formData[jaKey] ?? '') : '';
+              const mergedValue = jaKey
+                ? getMergedBilingualFieldValue(formData, col.key, jaKey, language)
+                : String(formData[col.key] ?? '');
 
               return (
                 <div key={col.key} className="bg-surface-900 border border-surface-800 rounded-xl p-4">
@@ -307,24 +328,15 @@ export function AddRowDrawer({
                     </div>
                     {jaKey && (
                       <span className="text-[10px] px-2 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20">
-                        EN / JA
+                        {language === 'ja' ? '自動翻訳' : 'Auto-translate'}
                       </span>
                     )}
                   </div>
 
-                  {jaKey ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <div className="mb-1 text-[10px] uppercase tracking-widest text-gray-500">English</div>
-                        {renderFieldControl(col, value)}
-                      </div>
-                      <div>
-                        <div className="mb-1 text-[10px] uppercase tracking-widest text-gray-500">Japanese</div>
-                        {renderFieldControl(col, jaValue, jaKey)}
-                      </div>
-                    </div>
-                  ) : (
-                    renderFieldControl(col, value)
+                  {renderFieldControl(
+                    col,
+                    mergedValue,
+                    jaKey ? { enKey: col.key, jaKey } : undefined
                   )}
                 </div>
               );

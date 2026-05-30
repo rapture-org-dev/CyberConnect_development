@@ -96,6 +96,7 @@ Task stats aggregate from `task_rows` (totals, done, in progress, not started).
 - Profile CRUD, team memberships listing, upgrade-to-admin, team member listing for assignees.
 - **Switch role** page for demo/multi-role accounts (`extra_roles` on profiles).
 - Dashboard language toggle (EN/JA) for UI strings via `src/lib/data.ts` translation helpers.
+- **Sheet bilingual auto-translate (DeepL):** On row create/update and CSV import finalize, text fields are language-detected; English is stored in EN columns and Japanese in `*_ja` columns, with DeepL filling the partner column. Import mapping shows one target per logical field (e.g. Remarks / 備考), not separate `remark` and `remark_ja`. Configure `DEEPL_AUTH_KEY` and `DEEPL_API_URL` in `.env.local` (see `.env.example`). The Schedule tab is UI-only (no row table).
 
 ---
 

@@ -234,7 +234,7 @@ export function getLocalizedProjectName(project: Project, lang: Language): strin
   return project.name;
 }
 
-const bilingualRowFieldMap: Record<string, Record<string, string>> = {
+export const bilingualRowFieldMap: Record<string, Record<string, string>> = {
   purpose: {
     major_item: 'major_item_ja',
     content: 'content_ja',
@@ -314,29 +314,38 @@ export function getBilingualRowFieldKey(tabId: string, key: string): string | nu
   return bilingualRowFieldMap[tabId]?.[key] ?? null;
 }
 
-/** Sheet fields available in batch-import column mapping (EN keys + `*_ja` from bilingualRowFieldMap). */
+/**
+ * Import mapping targets: one entry per logical column (EN key only).
+ * DeepL fills the partner `*_ja` column on import finalize.
+ */
 export function getImportMappingTargetsForTab(tab: SheetTab): { key: string; label: string }[] {
   const keysSeen = new Set<string>();
   const out: { key: string; label: string }[] = [];
 
   for (const c of tab.columns) {
-    if (!keysSeen.has(c.key)) {
-      keysSeen.add(c.key);
-      out.push({ key: c.key, label: c.label });
+    if (keysSeen.has(c.key)) continue;
+    if (c.key.endsWith('_ja') && getBilingualRowFieldKey(tab.id, c.key.replace(/_ja$/, ''))) {
+      continue;
     }
+    keysSeen.add(c.key);
     const jaKey = getBilingualRowFieldKey(tab.id, c.key);
-    if (
-      jaKey &&
-      !keysSeen.has(jaKey) &&
-      !tab.columns.some((col) => col.key === jaKey)
-    ) {
-      keysSeen.add(jaKey);
-      const jaLabel = c.labelJa?.trim() ? c.labelJa : c.label;
-      out.push({ key: jaKey, label: `${jaLabel} (JA)` });
-    }
+    const label =
+      jaKey && c.labelJa?.trim()
+        ? `${c.label} / ${c.labelJa}`
+        : c.label;
+    out.push({ key: c.key, label });
   }
 
   return out;
+}
+
+/** Map import UI / legacy `*_ja` targets to canonical EN field key before save + auto-translate. */
+export function resolveImportFieldKey(tabId: string, sheetColKey: string): string {
+  if (!sheetColKey || !sheetColKey.endsWith('_ja')) return sheetColKey;
+  const base = sheetColKey.slice(0, -3);
+  const jaKey = getBilingualRowFieldKey(tabId, base);
+  if (jaKey === sheetColKey) return base;
+  return sheetColKey;
 }
 
 /**
@@ -413,8 +422,7 @@ export function matchJapaneseImportHeaderToKey(tab: SheetTab, excelColumnHeader:
     const lja = c.labelJa ? normalizeImportHeader(c.labelJa) : '';
     if (!lja) continue;
     if (raw === lja || rawLower === lja.toLowerCase()) {
-      const jaKey = getBilingualRowFieldKey(tab.id, c.key);
-      return jaKey ?? c.key;
+      return c.key;
     }
   }
 

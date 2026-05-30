@@ -15,6 +15,7 @@ import {
   type ProjectSheetRole,
   isTasksTab,
 } from '@/lib/data';
+import { formatSelectCellDisplayValue } from '@/lib/bilingualFields';
 import { ChevronUp, ChevronDown, Trash2, Plus, Download, Loader2, X, Columns3 } from 'lucide-react';
 import { ImportModal } from './ImportModal';
 import { SheetColumnManagerModal } from './SheetColumnManagerModal';
@@ -637,7 +638,11 @@ export function GenericSheet({
                             className="w-full bg-surface-800 border border-brand-500 rounded px-2 py-1.5 text-base text-white focus:outline-none"
                             onClick={e => e.stopPropagation()}
                           >
-                            {(sourceCol.options ?? []).map(o => <option key={o} value={o}>{translate(o, language)}</option>)}
+                            {(sourceCol.options ?? []).map((o) => (
+                              <option key={o} value={o}>
+                                {formatSelectCellDisplayValue(tab.id, sourceCol.key, o, language)}
+                              </option>
+                            ))}
                           </select>
                         ) : (
                           <input
@@ -662,7 +667,7 @@ export function GenericSheet({
                           <span
                             className={`inline-flex max-w-full flex-wrap items-center gap-1 whitespace-normal break-words text-base font-medium px-2.5 py-1 rounded-full border ${statusColors[value]?.bg ?? 'bg-gray-500/10 border-gray-500/20'} ${statusColors[value]?.text ?? 'text-gray-400'}`}
                           >
-                            {translate(value, language)}
+                            {formatSelectCellDisplayValue(tab.id, sourceCol.key, value, language)}
                           </span>
                         ) : <span className="text-gray-600">—</span>
                       ) : sourceCol.type === 'assignee' ? (
