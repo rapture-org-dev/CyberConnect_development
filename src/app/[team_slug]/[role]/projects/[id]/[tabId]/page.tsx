@@ -186,6 +186,8 @@ export default function ProjectTabPage() {
               }}
               selectedRowId={selectedRow?.id ?? null}
               canManageSheetColumns={projectSheetRole === 'pm' || teamAdminOrOwner}
+              teamAdminOrOwner={teamAdminOrOwner}
+              isPlatformAdmin={loggedInUser?.role === 'admin'}
             />
           )}
         </div>
@@ -200,6 +202,8 @@ export default function ProjectTabPage() {
             screenCodeOptions={registeredScreenCodes}
             functionCodeOptions={registeredFunctionCodes}
             onClose={() => setSelectedRow(null)}
+            teamAdminOrOwner={teamAdminOrOwner}
+            isPlatformAdmin={loggedInUser?.role === 'admin'}
             onUpdate={async (updatedRow) => {
               await updateSheetRowData(projectId, resolvedTabId, updatedRow as SheetRow);
               setSelectedRow(null);

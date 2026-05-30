@@ -14,6 +14,8 @@ import {
   type Language,
   type ProjectSheetRole,
   isTasksTab,
+  userCanEditProjectSheetAsManager,
+  userCanEditScreenOrFunctionStatus,
 } from '@/lib/data';
 import { formatSelectCellDisplayValue } from '@/lib/bilingualFields';
 import { ChevronUp, ChevronDown, Trash2, Plus, Download, Loader2, X, Columns3 } from 'lucide-react';
@@ -40,6 +42,10 @@ interface Props {
   /** PM / project owner: open column layout editor (reorder, relabel, custom fields). */
   canManageSheetColumns?: boolean;
   onSheetColumnsChanged?: () => void;
+  /** Team company admin or billing owner — same sheet edit rights as PM. */
+  teamAdminOrOwner?: boolean;
+  /** Platform profiles.role === admin */
+  isPlatformAdmin?: boolean;
 }
 
 const statusColors: Record<string, { text: string; bg: string }> = {
@@ -132,6 +138,8 @@ export function GenericSheet({
   selectedRowId,
   canManageSheetColumns = false,
   onSheetColumnsChanged,
+  teamAdminOrOwner = false,
+  isPlatformAdmin = false,
 }: Props) {
   const { refreshSheetTab, refreshSheetColumnLayouts } = useWorkspace();
   const [sortKey, setSortKey] = useState<string>('');
@@ -190,30 +198,28 @@ export function GenericSheet({
 
   const sortedIds = sorted.map((r) => r.id);
   const tasks = isTasksTab(tab.id);
-  const pm = projectSheetRole === 'pm';
+  const sheetPrivOpts = { isTeamAdminOrOwner: teamAdminOrOwner, isPlatformAdmin };
+  const canManageSheet = userCanEditProjectSheetAsManager(projectSheetRole, sheetPrivOpts);
 
   const canEditCell = (colKey: string) => {
     if (tasks) {
-      if (pm) return true;
+      if (canManageSheet) return true;
       if (projectSheetRole === 'dev') {
         const c = tab.columns.find(c => c.key === colKey);
         return c?.editable ?? false;
       }
       return false;
     }
-    if (pm) return true;
-    if (
-      (tab.id === 'screen_list' || tab.id === 'function_list') &&
-      colKey === 'status' &&
-      (projectSheetRole === 'dev' || projectSheetRole === 'client')
-    ) {
+    if (canManageSheet) return true;
+    if (colKey === 'status' && userCanEditScreenOrFunctionStatus(tab.id, projectSheetRole, sheetPrivOpts)) {
       return true;
     }
     return false;
   };
 
-  const canAddRow = tab.pmCanAddRows && (pm || (tasks && projectSheetRole === 'dev'));
-  const canDeleteRow = pm || (tasks && projectSheetRole === 'dev');
+  const canAddRow =
+    tab.pmCanAddRows && (canManageSheet || (tasks && projectSheetRole === 'dev'));
+  const canDeleteRow = canManageSheet || (tasks && projectSheetRole === 'dev');
   const showBatchDelete = canDeleteRow && !!onDeleteRows;
 
   const sheetTableMinWidthPx = useMemo(() => {

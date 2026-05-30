@@ -156,7 +156,6 @@ function canonicalFunctionListStatusValue(val: unknown): string {
   if (!raw) return 'Need to be checked'
 
   if (FUNCTION_LIST_STATUS_CANONICAL.has(raw)) {
-    if (raw === 'Not started') return 'Need to be checked'
     return raw
   }
 
@@ -168,7 +167,7 @@ function canonicalFunctionListStatusValue(val: unknown): string {
   }
 
   const enAlias: Record<string, string> = {
-    'not started': 'Need to be checked',
+    'not started': 'Not started',
     'in progress': 'In progress',
     'in review': 'In review',
     completed: 'Completed',
@@ -186,7 +185,8 @@ function canonicalFunctionListStatusValue(val: unknown): string {
 
   if (/修正中|修正/.test(raw)) return 'In progress'
   if (/完了|完成/.test(raw)) return 'Completed'
-  if (/要確認|未着手/.test(raw)) return 'Need to be checked'
+  if (/要確認/.test(raw)) return 'Need to be checked'
+  if (/未着手/.test(raw)) return 'Not started'
 
   return 'Need to be checked'
 }
@@ -433,9 +433,6 @@ function sanitizeRowData(row: Record<string, unknown>, tableName: string) {
     if (clean.status !== undefined && clean.status !== null && String(clean.status).trim() !== '') {
       clean.status = canonicalFunctionListStatusValue(clean.status)
     } else {
-      clean.status = 'Need to be checked'
-    }
-    if (clean.status === '' || clean.status === 'Not started') {
       clean.status = 'Need to be checked'
     }
     if (clean.completion_dev !== undefined && clean.completion_dev !== null) {

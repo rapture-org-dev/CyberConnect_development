@@ -849,6 +849,20 @@ END;
 $$;
 
 
+-- ########## FILE: function_status_add_not_started.sql ##########
+
+-- Adds function sheet status value for UI + function_list_rows.status (public.function_status enum).
+-- Run on Supabase SQL editor or psql if saves fail with invalid enum "Not started".
+
+DO $$
+BEGIN
+  ALTER TYPE public.function_status ADD VALUE 'Not started';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END;
+$$;
+
+
 -- ########## FILE: phase_type_add_actual_performance.sql ##########
 
 -- Run in Supabase SQL editor (or psql) once.

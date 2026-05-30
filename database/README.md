@@ -39,3 +39,21 @@ Previous per-table SQL, staging hotfixes, and export snippets live under [`archi
 ## Production enum note
 
 RLS policies from production may reference `user_role` labels like `administrator` and `developer`. The schema bundle defines `('admin', 'pm', 'dev', 'client')`. If policy creation fails on enum cast, align `public.user_role` with production (or re-export policies after enums match).
+
+### Existing DB: function list status save errors
+
+If saving **Functions → Status** fails with `invalid input value for enum function_status: 'Not started'`, the project was created before that label existed on the enum. Run once in the SQL Editor:
+
+[`function_status_add_not_started.sql`](./function_status_add_not_started.sql)
+
+To inspect current labels:
+
+```sql
+SELECT e.enumlabel
+FROM pg_enum e
+JOIN pg_type t ON e.enumtypid = t.oid
+WHERE t.typname = 'function_status'
+ORDER BY e.enumsortorder;
+```
+
+Expected labels for the app: `Not started`, `In progress`, `In review`, `Completed`, `Need to be checked`. If `In review` is missing, run [`archive/function_status_add_in_review.sql`](./archive/function_status_add_in_review.sql) as well.

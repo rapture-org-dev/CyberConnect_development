@@ -13,6 +13,8 @@ import {
   type ProjectSheetRole,
   getClientRemarkColumnKeys,
   isTasksTab,
+  userCanEditProjectSheetAsManager,
+  userCanEditScreenOrFunctionStatus,
 } from '@/lib/data';
 import { RegisteredCodePicker } from '@/components/RegisteredCodePicker';
 import {
@@ -33,6 +35,8 @@ interface Props {
   functionCodeOptions?: string[];
   onClose: () => void;
   onUpdate: (updates: Partial<SheetRow>) => void | Promise<void>;
+  teamAdminOrOwner?: boolean;
+  isPlatformAdmin?: boolean;
 }
 
 const readOnlyControlClass =
@@ -48,6 +52,8 @@ export function SheetRowDetail({
   functionCodeOptions = [],
   onClose,
   onUpdate,
+  teamAdminOrOwner = false,
+  isPlatformAdmin = false,
 }: Props) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [savePending, setSavePending] = useState(false);
@@ -77,16 +83,20 @@ export function SheetRowDetail({
     !devBlockedNonTaskSheet &&
     (!clientRemarkOnly || clientRemarkKeys.length > 0 || clientCanEditStatusHere);
 
+  const sheetPrivOpts = { isTeamAdminOrOwner: teamAdminOrOwner, isPlatformAdmin };
+  const canManageSheet = userCanEditProjectSheetAsManager(projectSheetRole, sheetPrivOpts);
+
   const canEditField = (colKey: string) => {
     if (clientRemarkOnly) {
       return (
-        clientRemarkKeys.includes(colKey) || (statusOnlyTabs && colKey === 'status')
+        clientRemarkKeys.includes(colKey) ||
+        (colKey === 'status' && userCanEditScreenOrFunctionStatus(tab.id, projectSheetRole, sheetPrivOpts))
       );
     }
 
-    if (projectSheetRole === 'pm') return true;
-    if (statusOnlyTabs && colKey === 'status') {
-      return projectSheetRole === 'dev' || projectSheetRole === 'client';
+    if (canManageSheet) return true;
+    if (colKey === 'status' && userCanEditScreenOrFunctionStatus(tab.id, projectSheetRole, sheetPrivOpts)) {
+      return true;
     }
     if (projectSheetRole === 'dev' && isTasksTab(tab.id)) {
       const c = tab.columns.find(c => c.key === colKey);

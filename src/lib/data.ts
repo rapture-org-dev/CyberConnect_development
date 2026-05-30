@@ -100,6 +100,28 @@ export function isTasksTab(tabId: string): boolean {
   return tabId === 'tasks';
 }
 
+/** Screens / Functions: who may edit the main Status column (matches server sheet RBAC). */
+export function userCanEditScreenOrFunctionStatus(
+  tabId: string,
+  projectSheetRole: ProjectSheetRole,
+  options?: { isTeamAdminOrOwner?: boolean; isPlatformAdmin?: boolean }
+): boolean {
+  if (tabId !== 'screen_list' && tabId !== 'function_list') return false;
+  if (options?.isPlatformAdmin || options?.isTeamAdminOrOwner) return true;
+  if (projectSheetRole === 'pm') return true;
+  if (projectSheetRole === 'dev' || projectSheetRole === 'client') return true;
+  return false;
+}
+
+/** Full sheet edit (not only status) on non-task tabs — PM, team admin/owner, platform admin. */
+export function userCanEditProjectSheetAsManager(
+  projectSheetRole: ProjectSheetRole,
+  options?: { isTeamAdminOrOwner?: boolean; isPlatformAdmin?: boolean }
+): boolean {
+  if (options?.isPlatformAdmin || options?.isTeamAdminOrOwner) return true;
+  return projectSheetRole === 'pm';
+}
+
 function col(key: string, label: string, labelJa: string, width: number, type: SheetColumn['type'] = 'text', editable = true, options?: string[]): SheetColumn {
   return { key, label, labelJa, width, type, editable, options };
 }
