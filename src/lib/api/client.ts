@@ -289,6 +289,18 @@ export async function upsertSheetRowAction(
   })
 }
 
+export async function translateBilingualFieldAction(
+  tabId: string,
+  enKey: string,
+  sourceLang: 'en' | 'ja',
+  text: string
+): Promise<{ en: string; ja: string }> {
+  return apiFetch<{ en: string; ja: string }>('/api/sheet-rows/translate-field', {
+    method: 'POST',
+    body: JSON.stringify({ tabId, enKey, sourceLang, text }),
+  })
+}
+
 export async function upsertSheetRowsBatchAction(
   tabId: string,
   projectId: string,

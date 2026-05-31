@@ -15,10 +15,11 @@ import {
 import { getNextTaskCodeAction } from '@/lib/api/client';
 import { RegisteredCodePicker } from '@/components/RegisteredCodePicker';
 import {
-  applyUserBilingualInput,
   formatSelectCellDisplayValue,
-  getMergedBilingualFieldValue,
+  isMirroredBilingualField,
 } from '@/lib/bilingualFields';
+import { BilingualFieldPairEditor } from '@/components/BilingualFieldPairEditor';
+import { shouldRenderMergedBilingualBlock } from '@/lib/data';
 
 interface Props {
   tab: SheetTab;
@@ -155,24 +156,8 @@ export function AddRowDrawer({
     }
   };
 
-  const renderFieldControl = (
-    col: SheetTab['columns'][number],
-    value: string,
-    bilingual?: { enKey: string; jaKey: string }
-  ) => {
+  const renderFieldControl = (col: SheetTab['columns'][number], value: string) => {
     const setValue = (nextValue: string) => {
-      if (bilingual) {
-        setFormData((prev) =>
-          applyUserBilingualInput(
-            prev,
-            bilingual.enKey,
-            bilingual.jaKey,
-            language,
-            nextValue
-          ) as Record<string, string>
-        );
-        return;
-      }
       setFormData((prev) => ({ ...prev, [col.key]: nextValue }));
     };
 
@@ -313,9 +298,43 @@ export function AddRowDrawer({
           )}
           <div className="overflow-y-auto p-5 custom-scrollbar space-y-4">
             {fieldSpecs.map(({ col, jaKey }) => {
-              const mergedValue = jaKey
-                ? getMergedBilingualFieldValue(formData, col.key, jaKey, language)
-                : String(formData[col.key] ?? '');
+              const showDual =
+                jaKey &&
+                shouldRenderMergedBilingualBlock(tab, col.key) &&
+                !isMirroredBilingualField(tab.id, col.key);
+
+              if (showDual && jaKey) {
+                return (
+                  <div key={col.key} className="bg-surface-900 border border-surface-800 rounded-xl p-4">
+                    <div className="mb-3">
+                      <div className="text-sm font-medium text-gray-200">
+                        {getLocalizedColumnLabel(col, language)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-gray-600 font-mono">{col.key}</div>
+                    </div>
+                    <BilingualFieldPairEditor
+                      tabId={tab.id}
+                      col={col}
+                      enKey={col.key}
+                      jaKey={jaKey}
+                      enValue={String(formData[col.key] ?? '')}
+                      jaValue={String(formData[jaKey] ?? '')}
+                      editable={canEditField(col.key)}
+                      disabled={savePending}
+                      language={language}
+                      onChange={(_enKey, _jaKey, en, ja) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          [col.key]: en,
+                          [jaKey]: ja,
+                        }))
+                      }
+                    />
+                  </div>
+                );
+              }
+
+              const value = String(formData[col.key] ?? '');
 
               return (
                 <div key={col.key} className="bg-surface-900 border border-surface-800 rounded-xl p-4">
@@ -326,18 +345,9 @@ export function AddRowDrawer({
                       </div>
                       <div className="mt-0.5 text-[10px] text-gray-600 font-mono">{col.key}</div>
                     </div>
-                    {jaKey && (
-                      <span className="text-[10px] px-2 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20">
-                        {language === 'ja' ? '自動翻訳' : 'Auto-translate'}
-                      </span>
-                    )}
                   </div>
 
-                  {renderFieldControl(
-                    col,
-                    mergedValue,
-                    jaKey ? { enKey: col.key, jaKey } : undefined
-                  )}
+                  {renderFieldControl(col, value)}
                 </div>
               );
             })}

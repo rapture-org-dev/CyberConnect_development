@@ -11,7 +11,8 @@ import { computeNextTaskCode } from '@/lib/taskCodes'
 import { recoverUtf8MisreadAsLatin1, stripTextNuls } from '@/lib/importSheet'
 import { TABLE_NATIVE_KEYS } from '@/lib/tableNativeKeys'
 import { mergeExtrasIntoSheetRow } from '@/lib/sheetRows'
-import { applyBilingualAutoTranslateBatch, applyBilingualAutoTranslateToRow } from '@/server/bilingualAutoTranslate'
+import { applyMirroredBilingualFields } from '@/lib/bilingualFields'
+import { applyBilingualAutoTranslateBatch } from '@/server/bilingualAutoTranslate'
 import { resolveImportFieldKey } from '@/lib/data'
 
 /**
@@ -756,7 +757,9 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
       const existingMerged = existingRow
         ? mergeExtrasIntoSheetRow(existingRow as Record<string, unknown>)
         : null
-      await applyBilingualAutoTranslateToRow(tabId, cleanedData, existingMerged)
+      applyMirroredBilingualFields(tabId, cleanedData, existingMerged)
+    } else {
+      applyMirroredBilingualFields(tabId, cleanedData, null)
     }
 
     if (isAssigneeStatusOnlySheetTab(tabId, teamPriv)) {
@@ -1025,7 +1028,10 @@ export async function upsertSheetRowsBatchAction(
       if (id) existingById.set(id, rec)
     }
   }
-  await applyBilingualAutoTranslateBatch(tabId, payloads, existingById)
+  for (const payload of payloads) {
+    const id = String(payload.id ?? '')
+    applyMirroredBilingualFields(tabId, payload, existingById.get(id) ?? null)
+  }
 
   const savedRows: SheetRow[] = []
 

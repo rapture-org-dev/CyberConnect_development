@@ -18,10 +18,10 @@ import {
 } from '@/lib/data';
 import { RegisteredCodePicker } from '@/components/RegisteredCodePicker';
 import {
-  applyUserBilingualInput,
   formatSelectCellDisplayValue,
-  getMergedBilingualFieldValue,
+  isMirroredBilingualField,
 } from '@/lib/bilingualFields';
+import { BilingualFieldPairEditor } from '@/components/BilingualFieldPairEditor';
 import { X, Save, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -165,55 +165,33 @@ export function SheetRowDetail({
         <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
           {tab.columns.map(col => {
             const mergedJaKey = getBilingualRowFieldKey(tab.id, col.key);
-            if (mergedJaKey && shouldRenderMergedBilingualBlock(tab, col.key)) {
-              const mergedValue = getMergedBilingualFieldValue(
-                formData,
-                col.key,
-                mergedJaKey,
-                language
-              );
+            if (
+              mergedJaKey &&
+              shouldRenderMergedBilingualBlock(tab, col.key) &&
+              !isMirroredBilingualField(tab.id, col.key)
+            ) {
               const editableMerged = canEditField(col.key);
-              const lockedMerged =
-                !editableMerged &&
-                (clientRemarkOnly ||
-                  devBlockedNonTaskSheet ||
-                  (statusOnlyTabs && projectSheetRole === 'dev') ||
-                  (projectSheetRole === 'dev' && isTasksTab(tab.id)));
-              const onMergedChange = (v: string) =>
-                setFormData((prev) =>
-                  applyUserBilingualInput(prev, col.key, mergedJaKey, language, v)
-                );
+              const enValue = String(formData[col.key] ?? '');
+              const jaValue = String(formData[mergedJaKey] ?? '');
               return (
                 <div key={col.key}>
-                  <label className="text-xs text-gray-500 mb-1.5 flex items-center gap-2">
-                    <span>{getLocalizedColumnLabel(col, language)}</span>
-                    <span className="ml-auto text-[10px] px-2 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20">
-                      {language === 'ja' ? '自動翻訳' : 'Auto-translate'}
-                    </span>
+                  <label className="text-xs text-gray-500 mb-1.5 block">
+                    {getLocalizedColumnLabel(col, language)}
                   </label>
-                  {editableMerged && col.type === 'longtext' ? (
-                    <textarea
-                      value={mergedValue}
-                      onChange={(e) => onMergedChange(e.target.value)}
-                      rows={4}
-                      disabled={savePending}
-                      className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none min-h-[100px]"
-                    />
-                  ) : editableMerged && col.type !== 'longtext' ? (
-                    <input
-                      type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
-                      value={mergedValue}
-                      onChange={(e) => onMergedChange(e.target.value)}
-                      disabled={savePending}
-                      className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
-                    />
-                  ) : (
-                    <p
-                      className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap min-h-[36px] ${lockedMerged ? readOnlyControlClass : ''}`}
-                    >
-                      {mergedValue || <span className="text-gray-600 italic">—</span>}
-                    </p>
-                  )}
+                  <BilingualFieldPairEditor
+                    tabId={tab.id}
+                    col={col}
+                    enKey={col.key}
+                    jaKey={mergedJaKey}
+                    enValue={enValue}
+                    jaValue={jaValue}
+                    editable={editableMerged}
+                    disabled={savePending}
+                    language={language}
+                    onChange={(_enKey, _jaKey, en, ja) =>
+                      setFormData((prev) => ({ ...prev, [col.key]: en, [mergedJaKey]: ja }))
+                    }
+                  />
                 </div>
               );
             }
