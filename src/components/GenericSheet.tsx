@@ -1,6 +1,14 @@
-import { useState, useEffect, useRef, useLayoutEffect, useMemo, type CSSProperties } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+  useMemo,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import type { SheetTab, SheetColumn, SheetRow, Project, ImportConflict, ImportValidationPreview } from '@/types';
-import { finalizeImportRows } from '@/lib/api/client';
+import { finalizeImportRows, saveProjectSheetColumnLayoutAction } from '@/lib/api/client';
 import { useWorkspace } from '@/components/WorkspaceProvider';
 import {
   getProjectAssignableProfiles,
@@ -87,6 +95,14 @@ const SHEET_ROW_INDEX_PX = 56;
 const SHEET_CHECKBOX_COL_PX = 48;
 const SHEET_DELETE_COL_PX = 40;
 
+/** Match column manager modal limits. */
+const SHEET_COL_MIN_PX = 60;
+const SHEET_COL_MAX_PX = 800;
+
+function clampSheetColumnWidth(px: number): number {
+  return Math.min(SHEET_COL_MAX_PX, Math.max(SHEET_COL_MIN_PX, Math.round(px)));
+}
+
 /** Minimum width for `code` columns so IDs like TSK-106 stay on one line (see sheetDataColumnStyle). */
 const SHEET_CODE_COL_MIN_PX = 120;
 
@@ -169,8 +185,111 @@ export function GenericSheet({
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set());
   const [pendingBatchDelete, setPendingBatchDelete] = useState(false);
   const [showColumnManager, setShowColumnManager] = useState(false);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() =>
+    Object.fromEntries(tab.columns.map((c) => [c.key, c.width]))
+  );
+  const columnWidthsRef = useRef(columnWidths);
+  columnWidthsRef.current = columnWidths;
+  const resizeSessionRef = useRef<{ columnKey: string; startX: number; startWidth: number } | null>(
+    null
+  );
+  const [resizingColumnKey, setResizingColumnKey] = useState<string | null>(null);
+  const [savingColumnWidths, setSavingColumnWidths] = useState(false);
   /** Avoid ref-callback DOM writes during React placement (fixes insertBefore errors after bulk row refresh). */
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+
+  const columnLayoutSignature = useMemo(
+    () => tab.columns.map((c) => `${c.key}:${c.width}`).join('|'),
+    [tab.columns]
+  );
+
+  useEffect(() => {
+    setColumnWidths(Object.fromEntries(tab.columns.map((c) => [c.key, c.width])));
+  }, [tab.id, columnLayoutSignature, tab.columns]);
+
+  const getColumnWidthPx = (columnKey: string, fallback = 120): number => {
+    const base = tab.columns.find((c) => c.key === columnKey)?.width ?? fallback;
+    return columnWidths[columnKey] ?? base;
+  };
+
+  const beginColumnResize = (
+    e: ReactMouseEvent,
+    columnKey: string,
+    currentWidthPx: number
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeSessionRef.current = {
+      columnKey,
+      startX: e.clientX,
+      startWidth: currentWidthPx,
+    };
+    setResizingColumnKey(columnKey);
+  };
+
+  useEffect(() => {
+    if (!resizingColumnKey) return;
+
+    const onMove = (e: MouseEvent) => {
+      const session = resizeSessionRef.current;
+      if (!session) return;
+      const delta = e.clientX - session.startX;
+      const next = clampSheetColumnWidth(session.startWidth + delta);
+      setColumnWidths((prev) => ({ ...prev, [session.columnKey]: next }));
+    };
+
+    const onUp = () => {
+      const session = resizeSessionRef.current;
+      resizeSessionRef.current = null;
+      setResizingColumnKey(null);
+
+      if (!session || !canManageSheetColumns || !project?.id) return;
+
+      const widths = columnWidthsRef.current;
+      const columnsToSave = tab.columns.map((col) => ({
+        ...col,
+        width: clampSheetColumnWidth(widths[col.key] ?? col.width),
+      }));
+      const changed = columnsToSave.some(
+        (col, i) => col.width !== tab.columns[i]?.width
+      );
+      if (!changed) return;
+
+      setSavingColumnWidths(true);
+      void saveProjectSheetColumnLayoutAction(project.id, tab.id, columnsToSave)
+        .then(() => {
+          void refreshSheetColumnLayouts(project.id);
+          onSheetColumnsChanged?.();
+        })
+        .catch(() => {
+          setSheetMutationError(translate('Save failed', language));
+        })
+        .finally(() => {
+          setSavingColumnWidths(false);
+        });
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [
+    resizingColumnKey,
+    canManageSheetColumns,
+    project?.id,
+    tab.id,
+    tab.columns,
+    language,
+    refreshSheetColumnLayouts,
+    onSheetColumnsChanged,
+  ]);
+
   const displayColumns = tab.columns.flatMap((c) => {
     const jaKey = getBilingualRowFieldKey(tab.id, c.key);
     if (!jaKey) {
@@ -224,13 +343,14 @@ export function GenericSheet({
 
   const sheetTableMinWidthPx = useMemo(() => {
     let w = SHEET_ROW_INDEX_PX + (showBatchDelete ? SHEET_CHECKBOX_COL_PX : 0);
-    w += displayColumns.reduce(
-      (sum, c) => sum + (c.type === 'code' ? sheetCodeLayoutWidthPx(c.width) : c.width),
-      0
-    );
+    w += displayColumns.reduce((sum, c) => {
+      const sourceCol = tab.columns.find((col) => col.key === c.sourceKey) ?? c;
+      const px = getColumnWidthPx(c.sourceKey, c.width);
+      return sum + (sourceCol.type === 'code' ? sheetCodeLayoutWidthPx(px) : px);
+    }, 0);
     if (canDeleteRow) w += SHEET_DELETE_COL_PX;
     return w;
-  }, [displayColumns, showBatchDelete, canDeleteRow]);
+  }, [displayColumns, showBatchDelete, canDeleteRow, columnWidths, tab.columns]);
 
   const allVisibleSelected =
     sortedIds.length > 0 && sortedIds.every((id) => selectedRowIds.has(id));
@@ -476,9 +596,15 @@ export function GenericSheet({
           </button>
         )}
         <span className="text-base text-gray-500">{rows.length} rows</span>
+        {savingColumnWidths && (
+          <span className="flex items-center gap-1.5 text-sm text-gray-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {language === 'ja' ? '列幅を保存中…' : 'Saving column widths…'}
+          </span>
+        )}
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className={`flex-1 overflow-auto ${resizingColumnKey ? 'cursor-col-resize' : ''}`}>
         <table
           className="border-separate border-spacing-0"
           style={{
@@ -510,14 +636,17 @@ export function GenericSheet({
               )}
               {displayColumns.map(c => {
                 const sourceColForHead = tab.columns.find((col) => col.key === c.sourceKey) ?? c;
+                const widthPx = getColumnWidthPx(c.sourceKey, c.width);
+                const resizeTitle =
+                  language === 'ja' ? 'ドラッグして列幅を変更' : 'Drag to resize column';
                 return (
                 <th
                   key={c.displayKey}
-                  className={`${SHEET_HEADER_CELL} px-3 py-3 text-left align-middle cursor-pointer group select-none`}
-                  style={sheetDataColumnStyle(c.width, sourceColForHead.type)}
+                  className={`${SHEET_HEADER_CELL} relative px-3 py-3 text-left align-middle cursor-pointer group select-none`}
+                  style={sheetDataColumnStyle(widthPx, sourceColForHead.type)}
                   onClick={() => handleSort(c.actualKey)}
                 >
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5 pr-1">
                     <div className="min-w-0">
                       <span className="block break-words text-base font-medium text-gray-300 group-hover:text-white transition-colors">
                         {getLocalizedColumnLabel(c, language)}
@@ -532,6 +661,20 @@ export function GenericSheet({
                         : <ChevronDown className="w-4 h-4 text-brand-400" />
                     )}
                   </div>
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={resizeTitle}
+                    title={resizeTitle}
+                    className={`absolute right-0 top-0 z-30 h-full w-2 cursor-col-resize touch-none ${
+                      resizingColumnKey === c.sourceKey
+                        ? 'bg-brand-500/70'
+                        : 'bg-transparent hover:bg-brand-500/40'
+                    }`}
+                    onMouseDown={(e) => beginColumnResize(e, c.sourceKey, widthPx)}
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                  />
                 </th>
                 );
               })}
@@ -615,11 +758,12 @@ export function GenericSheet({
                     tab.guestEditableColumns.includes(c.sourceKey) &&
                     editable;
 
+                  const cellWidthPx = getColumnWidthPx(c.sourceKey, c.width);
                   return (
                     <td
                       key={c.displayKey}
-                      className={`${sheetDataCellVerticalAlign(sourceCol.type, c.width)} px-3 py-3 text-base ${isGuestEditable ? 'bg-amber-500/3' : ''}`}
-                      style={sheetDataColumnStyle(c.width, sourceCol.type)}
+                      className={`${sheetDataCellVerticalAlign(sourceCol.type, cellWidthPx)} px-3 py-3 text-base ${isGuestEditable ? 'bg-amber-500/3' : ''}`}
+                      style={sheetDataColumnStyle(cellWidthPx, sourceCol.type)}
                       onDoubleClick={(e) => { e.stopPropagation(); if (editable) startEdit(row.id, c.actualKey, value); }}
                     >
                       {isEditing ? (
