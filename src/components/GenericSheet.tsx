@@ -513,7 +513,7 @@ export function GenericSheet({
                 return (
                 <th
                   key={c.displayKey}
-                  className={`${SHEET_HEADER_CELL} px-3 py-3 text-left cursor-pointer group select-none ${sheetDataCellVerticalAlign(sourceColForHead.type, c.width)}`}
+                  className={`${SHEET_HEADER_CELL} px-3 py-3 text-left align-middle cursor-pointer group select-none`}
                   style={sheetDataColumnStyle(c.width, sourceColForHead.type)}
                   onClick={() => handleSort(c.actualKey)}
                 >
@@ -522,9 +522,9 @@ export function GenericSheet({
                       <span className="block break-words text-base font-medium text-gray-300 group-hover:text-white transition-colors">
                         {getLocalizedColumnLabel(c, language)}
                       </span>
-                      <span className="block text-sm text-gray-600">
-                        {c.langTag ?? ''}
-                      </span>
+                      {c.langTag ? (
+                        <span className="block text-sm text-gray-600">{c.langTag}</span>
+                      ) : null}
                     </div>
                     {sortKey === c.actualKey && (
                       sortDir === 'asc'

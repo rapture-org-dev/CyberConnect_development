@@ -85,29 +85,6 @@ export function SheetColumnManagerModal({
     });
   };
 
-  /** Keep EN/JA labels in sync until the user diverges them (then each side edits independently). */
-  const updateLabelEn = (i: number, value: string) => {
-    setColumns((prev) => {
-      const next = [...prev];
-      const cur = next[i];
-      if (!cur) return prev;
-      const stillLinked = cur.labelJa === '' || cur.labelJa === cur.label;
-      next[i] = { ...cur, label: value, labelJa: stillLinked ? value : cur.labelJa };
-      return next;
-    });
-  };
-
-  const updateLabelJa = (i: number, value: string) => {
-    setColumns((prev) => {
-      const next = [...prev];
-      const cur = next[i];
-      if (!cur) return prev;
-      const stillLinked = cur.label === '' || cur.label === cur.labelJa;
-      next[i] = { ...cur, labelJa: value, label: stillLinked ? value : cur.label };
-      return next;
-    });
-  };
-
   const remove = (i: number) => {
     const col = columns[i];
     if (!col || required.has(col.key)) return;
@@ -115,13 +92,12 @@ export function SheetColumnManagerModal({
   };
 
   const addCustom = () => {
-    const label = language === 'ja' ? 'カスタム項目' : 'Custom field';
     setColumns((prev) => [
       ...prev,
       {
         key: generateCustomColumnKey(),
-        label,
-        labelJa: label,
+        label: 'Custom field',
+        labelJa: 'カスタム項目',
         width: 160,
         type: 'text',
         editable: true,
@@ -203,8 +179,8 @@ export function SheetColumnManagerModal({
 
           <p className="mb-3 text-xs text-gray-500">
             {language === 'ja'
-              ? 'ラベルが同じ内容のうちは、EN/JA のどちらかを編集すると両方に反映されます。'
-              : 'While EN and JA labels match, editing one updates both. Split them by changing one side only.'}
+              ? 'ラベル (EN) とラベル (JA) はそれぞれ独立して編集できます。'
+              : 'Label (EN) and Label (JA) can be edited independently.'}
           </p>
           <div className="mb-4 flex flex-wrap gap-2">
             <button
@@ -276,7 +252,7 @@ export function SheetColumnManagerModal({
                     {language === 'ja' ? 'ラベル (EN)' : 'Label (EN)'}
                     <input
                       value={col.label}
-                      onChange={(e) => updateLabelEn(i, e.target.value)}
+                      onChange={(e) => update(i, { label: e.target.value })}
                       className="mt-1 w-full rounded-lg border border-surface-700 bg-surface-800 px-2 py-1.5 text-sm text-white"
                     />
                   </label>
@@ -284,7 +260,7 @@ export function SheetColumnManagerModal({
                     {language === 'ja' ? 'ラベル (JA)' : 'Label (JA)'}
                     <input
                       value={col.labelJa}
-                      onChange={(e) => updateLabelJa(i, e.target.value)}
+                      onChange={(e) => update(i, { labelJa: e.target.value })}
                       className="mt-1 w-full rounded-lg border border-surface-700 bg-surface-800 px-2 py-1.5 text-sm text-white"
                     />
                   </label>
