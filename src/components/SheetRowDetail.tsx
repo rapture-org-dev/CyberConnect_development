@@ -160,6 +160,10 @@ export function SheetRowDetail({
                   devBlockedNonTaskSheet ||
                   (statusOnlyTabs && projectSheetRole === 'dev') ||
                   (projectSheetRole === 'dev' && isTasksTab(tab.id)));
+              const isTaskRemarkField = isTasksTab(tab.id) && col.key === 'remark';
+              const longTextRows = isTaskRemarkField ? 8 : 4;
+              const longTextMinHeight = isTaskRemarkField ? 'min-h-[180px]' : 'min-h-[100px]';
+              const readOnlyMinHeight = isTaskRemarkField ? 'min-h-[180px]' : 'min-h-[36px]';
               return (
                 <div key={col.key}>
                   <label className="text-xs text-gray-500 mb-1.5 flex items-center gap-2">
@@ -182,9 +186,9 @@ export function SheetRowDetail({
                           onChange={e =>
                             setFormData(prev => ({ ...prev, [col.key]: e.target.value }))
                           }
-                          rows={4}
+                          rows={longTextRows}
                           disabled={savePending}
-                          className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none min-h-[100px]"
+                          className={`w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none ${longTextMinHeight}`}
                         />
                       ) : editableMerged && col.type !== 'longtext' ? (
                         <input
@@ -197,11 +201,11 @@ export function SheetRowDetail({
                           className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                         />
                       ) : lockedMerged ? (
-                        <p className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap min-h-[36px] ${readOnlyControlClass}`}>
+                        <p className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap ${readOnlyMinHeight} ${readOnlyControlClass}`}>
                           {valueEn || <span className="text-gray-600 italic">—</span>}
                         </p>
                       ) : (
-                        <p className="text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap min-h-[36px]">
+                        <p className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap ${readOnlyMinHeight}`}>
                           {valueEn || <span className="text-gray-600 italic">—</span>}
                         </p>
                       )}
@@ -214,9 +218,9 @@ export function SheetRowDetail({
                           onChange={e =>
                             setFormData(prev => ({ ...prev, [mergedJaKey]: e.target.value }))
                           }
-                          rows={4}
+                          rows={longTextRows}
                           disabled={savePending}
-                          className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none min-h-[100px]"
+                          className={`w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none ${longTextMinHeight}`}
                         />
                       ) : editableMerged && col.type !== 'longtext' ? (
                         <input
@@ -229,11 +233,11 @@ export function SheetRowDetail({
                           className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                         />
                       ) : lockedMerged ? (
-                        <p className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap min-h-[36px] ${readOnlyControlClass}`}>
+                        <p className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap ${readOnlyMinHeight} ${readOnlyControlClass}`}>
                           {valueJa || <span className="text-gray-600 italic">—</span>}
                         </p>
                       ) : (
-                        <p className="text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap min-h-[36px]">
+                        <p className={`text-sm text-gray-300 bg-surface-850 rounded-lg px-3 py-2 border border-surface-800 whitespace-pre-wrap ${readOnlyMinHeight}`}>
                           {valueJa || <span className="text-gray-600 italic">—</span>}
                         </p>
                       )}
