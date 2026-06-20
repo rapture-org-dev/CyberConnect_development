@@ -21,10 +21,11 @@ via the helper script; it is intentionally NOT in the update script.
 
 ### Bringing the environment up from a fresh VM
 
-1. **Docker** is required for Supabase but is not pre-installed and there is no systemd.
-   Install it (see Cursor Cloud Docker setup), then start the daemon manually in the
-   background (e.g. `sudo dockerd` in a tmux session) and make the socket usable
-   (`sudo chmod 666 /var/run/docker.sock`).
+1. **Docker** is required for Supabase. It is pre-installed in the Cursor Cloud VM but
+   there is no systemd, so the daemon does not auto-start: start it manually in the
+   background (e.g. `sudo dockerd > /tmp/dockerd.log 2>&1` in a tmux session) and make
+   the socket usable (`sudo chmod 666 /var/run/docker.sock`). The local Supabase
+   containers persist in the VM snapshot and restart automatically once `dockerd` is up.
 2. Run the idempotent DB bring-up helper: `./scripts/setup-local-supabase.sh`.
    It starts Supabase (if needed), applies `database/cyberconnect_schema.sql`, aligns
    enum labels, grants Data API privileges, applies `database/cyberconnect_rls.sql`, and
