@@ -15,7 +15,7 @@ const DISCORD_RESPONSE_PONG = 1
 const DISCORD_RESPONSE_CHANNEL_MESSAGE_WITH_SOURCE = 4
 const DISCORD_MESSAGE_FLAG_EPHEMERAL = 64
 
-function discordMessage(content: string, status = 200) {
+function discordMessage(content: string) {
   return NextResponse.json(
     {
       type: DISCORD_RESPONSE_CHANNEL_MESSAGE_WITH_SOURCE,
@@ -24,7 +24,6 @@ function discordMessage(content: string, status = 200) {
         flags: DISCORD_MESSAGE_FLAG_EPHEMERAL,
       },
     },
-    { status },
   )
 }
 
@@ -73,15 +72,15 @@ export async function POST(request: Request) {
   }
 
   if (payload.type !== DISCORD_INTERACTION_APPLICATION_COMMAND) {
-    return discordMessage('Unsupported Discord interaction type.', 400)
+    return discordMessage('Unsupported Discord interaction type.')
   }
 
   if (!isDiscordRequestCommand(payload)) {
-    return discordMessage('Unsupported Discord command.', 400)
+    return discordMessage('Unsupported Discord command.')
   }
 
   const forbiddenReason = forbiddenByAllowlist(payload)
-  if (forbiddenReason) return discordMessage(forbiddenReason, 403)
+  if (forbiddenReason) return discordMessage(forbiddenReason)
 
   try {
     const issueInput = buildIssueFromDiscordRequest(payload)
@@ -89,6 +88,6 @@ export async function POST(request: Request) {
     return discordMessage(`GitHub issue #${issue.number} created: ${issue.htmlUrl}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return discordMessage(`Failed to create GitHub issue: ${message}`, 500)
+    return discordMessage(`Failed to create GitHub issue: ${message}`)
   }
 }
