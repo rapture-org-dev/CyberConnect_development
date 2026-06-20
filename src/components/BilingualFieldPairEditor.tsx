@@ -20,6 +20,7 @@ type Props = {
   editable: boolean
   disabled?: boolean
   language: Language
+  size?: 'default' | 'large'
   onChange: (enKey: string, jaKey: string, en: string, ja: string) => void
 }
 
@@ -38,6 +39,7 @@ export function BilingualFieldPairEditor({
   editable,
   disabled = false,
   language,
+  size = 'default',
   onChange,
 }: Props) {
   const [translating, setTranslating] = useState<'en' | 'ja' | null>(null)
@@ -45,6 +47,8 @@ export function BilingualFieldPairEditor({
 
   const canTranslate = isDeepLEligibleBilingualField(tabId, enKey)
   const isLong = col.type === 'longtext'
+  const longTextRows = size === 'large' ? 8 : 4
+  const longTextMinHeight = size === 'large' ? 'min-h-[180px]' : 'min-h-[100px]'
 
   const runTranslate = async (sourceLang: 'en' | 'ja') => {
     if (!canTranslate || !editable || disabled) return
@@ -78,7 +82,7 @@ export function BilingualFieldPairEditor({
   ) => {
     if (!editable) {
       return (
-        <p className={readOnlyClass}>
+        <p className={`${readOnlyClass} ${isLong ? longTextMinHeight : ''}`}>
           {value || <span className="text-gray-600 italic">—</span>}
         </p>
       )
@@ -89,9 +93,9 @@ export function BilingualFieldPairEditor({
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
           disabled={disabled || translating !== null}
-          rows={4}
+          rows={longTextRows}
           aria-label={ariaLabel}
-          className={`${inputClass} resize-none min-h-[100px]`}
+          className={`${inputClass} resize-none ${longTextMinHeight}`}
         />
       )
     }

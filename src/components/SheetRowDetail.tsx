@@ -188,6 +188,7 @@ export function SheetRowDetail({
                     editable={editableMerged}
                     disabled={savePending}
                     language={language}
+                    size={isTasksTab(tab.id) && col.key === 'remark' ? 'large' : 'default'}
                     onChange={(_enKey, _jaKey, en, ja) =>
                       setFormData((prev) => ({ ...prev, [col.key]: en, [mergedJaKey]: ja }))
                     }
