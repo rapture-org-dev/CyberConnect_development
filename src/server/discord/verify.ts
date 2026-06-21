@@ -1,6 +1,7 @@
 import { createPublicKey, verify } from 'node:crypto'
 
 const DISCORD_ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+const DISCORD_SIGNATURE_MAX_SKEW_SECONDS = 5 * 60
 
 function publicKeyFromDiscordHex(publicKeyHex: string) {
   const publicKeyBytes = Buffer.from(publicKeyHex, 'hex')
@@ -23,6 +24,7 @@ export function verifyDiscordRequestSignature(params: {
 }) {
   const { publicKeyHex, signatureHex, timestamp, rawBody } = params
   if (!signatureHex || !timestamp) return false
+  if (!isDiscordTimestampFresh(timestamp)) return false
 
   try {
     const signature = Buffer.from(signatureHex, 'hex')
@@ -31,4 +33,12 @@ export function verifyDiscordRequestSignature(params: {
   } catch {
     return false
   }
+}
+
+export function isDiscordTimestampFresh(timestamp: string, nowMs = Date.now()) {
+  const timestampSeconds = Number(timestamp)
+  if (!Number.isFinite(timestampSeconds)) return false
+
+  const skewSeconds = Math.abs(nowMs / 1000 - timestampSeconds)
+  return skewSeconds < DISCORD_SIGNATURE_MAX_SKEW_SECONDS
 }
