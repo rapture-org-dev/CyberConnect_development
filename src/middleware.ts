@@ -65,8 +65,12 @@ export async function middleware(request: NextRequest) {
   // Protected routes check
   const isLoginPage = pathname === '/login'
   const isAuthApi = pathname.startsWith('/api/auth')
-  
-  if (!user && !isLoginPage && !isAuthApi && pathname !== '/') {
+  const isPublicApi =
+    isAuthApi ||
+    pathname === '/api/discord/interactions' ||
+    pathname.startsWith('/api/webhooks/')
+
+  if (!user && !isLoginPage && !isPublicApi && pathname !== '/') {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

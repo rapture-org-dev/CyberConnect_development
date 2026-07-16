@@ -1,0 +1,78 @@
+Discord → GitHub Issue — local verification (main branch)
+================================================================================
+
+Prerequisites
+--------------------------------------------------------------------------------
+  .env.local (server-only, do not commit):
+    DISCORD_PUBLIC_KEY=<from Discord Developer Portal → Application → Public Key>
+    GITHUB_ISSUES_TOKEN=<PAT with Issues read/write>
+    GITHUB_OWNER=rapture-org-dev
+    GITHUB_REPO=CyberConnect_development
+
+  Optional:
+    DISCORD_ALLOWED_GUILD_ID=
+    DISCORD_ALLOWED_CHANNEL_ID=
+
+Step 1 — Route exists locally
+--------------------------------------------------------------------------------
+  npm run dev
+  Note the port (e.g. 3000 or 3001).
+
+  PowerShell (expect 401 — route is up, signature missing):
+    Invoke-WebRequest -Uri "http://localhost:3001/api/discord/interactions" `
+      -Method POST -Body "{}" -ContentType "application/json"
+
+  If you see 500 "DISCORD_PUBLIC_KEY is required" → add key and restart dev.
+  If you get HTML (login page) instead of JSON 401 → middleware must allow
+  /api/discord/interactions without a Supabase session (see src/middleware.ts).
+
+Step 2 — Expose localhost to Discord (ngrok)
+--------------------------------------------------------------------------------
+  Discord cannot call http://localhost directly.
+
+  1. Install ngrok (or Cloudflare Tunnel).
+  2. In another terminal:
+       ngrok http 3001
+     (use your actual dev port)
+  3. Copy the HTTPS URL, e.g. https://abc123.ngrok-free.app
+
+Step 3 — Discord Developer Portal
+--------------------------------------------------------------------------------
+  1. Your Discord Application → General Information
+     - Public Key must match DISCORD_PUBLIC_KEY in .env.local
+  2. Interactions Endpoint URL:
+       https://<ngrok-host>/api/discord/interactions
+  3. Save — Discord sends a PING; your app must respond with PONG (automatic).
+
+  If verification fails: check public key, ngrok URL, dev server running, no stale ngrok.
+
+Step 4 — Slash command test
+--------------------------------------------------------------------------------
+  Command name: request  (options: title, description, etc. per app registration)
+
+  In an allowed Discord server/channel:
+    /request title: test from local description: hello
+
+  Success:
+    - Ephemeral reply: GitHub issue #N created: https://github.com/...
+    - Issue visible in GITHUB_OWNER/GITHUB_REPO
+
+  Failure messages appear in the ephemeral reply (token, labels, allowlist, etc.).
+
+Step 5 — Ship to main / production
+--------------------------------------------------------------------------------
+  After local + ngrok test passes:
+    1. Commit Discord API files (not .env.local):
+         src/app/api/discord/
+         src/server/discord/
+         .env.example
+    2. Push main
+    3. Set same env vars on Vercel production project
+    4. Redeploy
+    5. Point Discord Interactions Endpoint to production URL:
+         https://<production-host>/api/discord/interactions
+
+Notes
+--------------------------------------------------------------------------------
+  - Staging-only deploy without this code on main will 404 on /api/discord/interactions.
+  - This flow creates GitHub issues only; it does not link CyberConnect Tasks rows.
