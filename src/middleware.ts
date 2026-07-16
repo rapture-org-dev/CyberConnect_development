@@ -1,7 +1,20 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+function isMiddlewarePublicApiPath(pathname: string) {
+  return (
+    pathname === '/api/discord/interactions' || pathname.startsWith('/api/webhooks/')
+  )
+}
+
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Discord / GitHub webhooks must not run Supabase auth or team checks (Edge timeout on Vercel).
+  if (isMiddlewarePublicApiPath(pathname)) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -60,7 +73,6 @@ export async function middleware(request: NextRequest) {
   const activeRole = request.cookies.get('active_workspace_role')?.value
   const activeTeamSlug = request.cookies.get('active_team_slug')?.value
   const hasAppSession = Boolean(request.cookies.get('cyberconnect_email')?.value)
-  const { pathname } = request.nextUrl
 
   // Protected routes check
   const isLoginPage = pathname === '/login'
@@ -197,6 +209,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - any image file
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/discord|api/webhooks|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
