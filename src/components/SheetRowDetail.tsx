@@ -24,7 +24,7 @@ import {
 import { BilingualFieldPairEditor } from '@/components/BilingualFieldPairEditor';
 import { TaskGitHubIssuePanel } from '@/components/TaskGitHubIssuePanel';
 import { useWorkspace } from '@/components/WorkspaceProvider';
-import { formatProjectGitHubReposLabel } from '@/lib/githubRepo';
+import { formatProjectGitHubReposLabel, listGitHubReposForProject, formatGitHubOwnerRepo } from '@/lib/githubRepo';
 import { X, Save, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -175,6 +175,9 @@ export function SheetRowDetail({
               language={language}
               canLink={canManageSheet || projectSheetRole === 'dev'}
               repoLabel={formatProjectGitHubReposLabel(project) || undefined}
+              boundRepos={listGitHubReposForProject(project).map((r) =>
+                formatGitHubOwnerRepo(r.owner, r.repo)
+              )}
               onRowUpdated={(updated) => {
                 setFormData((prev) => ({ ...prev, ...updated }));
                 applySheetRowLocal(project.id, tab.id, updated);

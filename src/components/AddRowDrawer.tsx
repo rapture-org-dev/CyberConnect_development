@@ -26,7 +26,7 @@ import {
 import { shouldRenderMergedBilingualBlock } from '@/lib/data';
 import { taskGitHubIssueAction } from '@/lib/api/client';
 import { useWorkspace } from '@/components/WorkspaceProvider';
-import { formatProjectGitHubReposLabel } from '@/lib/githubRepo';
+import { formatProjectGitHubReposLabel, listGitHubReposForProject, formatGitHubOwnerRepo } from '@/lib/githubRepo';
 
 interface Props {
   tab: SheetTab;
@@ -351,6 +351,9 @@ export function AddRowDrawer({
                 language={language}
                 canLink={canLinkGitHub}
                 repoLabel={formatProjectGitHubReposLabel(project ?? {}) || undefined}
+                boundRepos={listGitHubReposForProject(project ?? {}).map((r) =>
+                  formatGitHubOwnerRepo(r.owner, r.repo)
+                )}
                 compose
                 composeIntent={githubIntent}
                 onComposeIntentChange={setGithubIntent}
