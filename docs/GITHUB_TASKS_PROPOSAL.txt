@@ -44,10 +44,10 @@ rapture-org-dev には多数の GitHub リポジトリがあり、CyberConnect �
 
 2.2 Create / Link / Unlink UI
   - Task detail sidebar: Create | Link | Unlink | Refresh | Push status
-  - Link dropdown: open issues from the project's default GitHub repo
+  - Project may bind multiple GitHub repos (Edit Project → add rows)
+  - Link dropdown: open issues from ALL bound project repos
+  - Create: pick which bound repo when more than one
   - Add New task: optional “create or link after save” (same dropdown)
-  - New / Edit Project: optional default GitHub repo field (owner/repo)
-  - Create + bare #123 use project default repo, else env GITHUB_OWNER/REPO
   - Paste full URL still works for any other accessible repo
 
 2.3 Sync rules (light two-way)

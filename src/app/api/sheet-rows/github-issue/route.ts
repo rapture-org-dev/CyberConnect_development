@@ -12,6 +12,8 @@ type Body = {
   rowId?: string
   action?: 'create' | 'link' | 'unlink' | 'refresh' | 'push-status'
   issueUrl?: string
+  /** owner/repo when creating into a non-primary project repo */
+  createRepo?: string
 }
 
 export async function POST(request: Request) {
@@ -22,7 +24,11 @@ export async function POST(request: Request) {
 
   try {
     if (body.action === 'create') {
-      const result = await createGitHubIssueForTaskAction(body.projectId, body.rowId)
+      const result = await createGitHubIssueForTaskAction(
+        body.projectId,
+        body.rowId,
+        body.createRepo
+      )
       return apiJson(result)
     }
 

@@ -9,6 +9,7 @@ import {
   type ProjectGitHubIssueOption,
 } from '@/lib/api/client';
 import { readTaskGitHubIssue } from '@/lib/githubTaskLink';
+import { formatGitHubOwnerRepo } from '@/lib/githubRepo';
 import type { Language } from '@/lib/data';
 
 export type GitHubComposeIntent = 'none' | 'create' | 'link';
@@ -28,9 +29,11 @@ interface Props {
   onComposeIntentChange?: (intent: GitHubComposeIntent) => void;
   composeIssueInput?: string;
   onComposeIssueInputChange?: (value: string) => void;
+  composeCreateRepo?: string;
+  onComposeCreateRepoChange?: (value: string) => void;
 }
 
-function truncateTitle(title: string, max = 72) {
+function truncateTitle(title: string, max = 64) {
   const t = title.trim();
   if (t.length <= max) return t;
   return `${t.slice(0, max - 1)}…`;
@@ -38,9 +41,9 @@ function truncateTitle(title: string, max = 72) {
 
 function useProjectIssueOptions(projectId: string, enabled: boolean) {
   const [issues, setIssues] = useState<ProjectGitHubIssueOption[]>([]);
+  const [repos, setRepos] = useState<{ owner: string; repo: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState('');
-  const [repoPath, setRepoPath] = useState('');
 
   const reload = useCallback(async () => {
     if (!enabled || !projectId) return;
@@ -49,10 +52,10 @@ function useProjectIssueOptions(projectId: string, enabled: boolean) {
     try {
       const result = await listProjectGitHubIssuesAction(projectId, 'open');
       setIssues(result.issues);
-      setRepoPath(`${result.repo.owner}/${result.repo.repo}`);
+      setRepos(result.repos);
     } catch (e) {
       setIssues([]);
-      setRepoPath('');
+      setRepos([]);
       setListError(e instanceof Error ? e.message : 'Failed to load issues');
     } finally {
       setLoading(false);
@@ -63,7 +66,50 @@ function useProjectIssueOptions(projectId: string, enabled: boolean) {
     void reload();
   }, [reload]);
 
-  return { issues, loading, listError, repoPath, reload };
+  return { issues, repos, loading, listError, reload };
+}
+
+function CreateRepoSelect({
+  language,
+  repos,
+  value,
+  onChange,
+  disabled,
+}: {
+  language: Language;
+  repos: { owner: string; repo: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const t = (en: string, ja: string) => (language === 'ja' ? ja : en);
+  if (repos.length <= 1) return null;
+  const current = value || formatGitHubOwnerRepo(repos[0]?.owner, repos[0]?.repo);
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] text-gray-500">
+        {t('Create in repository', '作成先リポジトリ')}
+      </label>
+      <select
+        value={current}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-surface-700 bg-surface-800 px-2 py-1.5 text-xs text-white disabled:opacity-50"
+      >
+        {repos.map((r) => {
+          const full = formatGitHubOwnerRepo(r.owner, r.repo);
+          return (
+            <option key={full} value={full}>
+              {full}
+              {full === formatGitHubOwnerRepo(repos[0]?.owner, repos[0]?.repo)
+                ? t(' (primary)', '（プライマリ）')
+                : ''}
+            </option>
+          );
+        })}
+      </select>
+    </div>
+  );
 }
 
 function IssueLinkPicker({
@@ -84,12 +130,12 @@ function IssueLinkPicker({
   onEnter?: () => void;
 }) {
   const t = (en: string, ja: string) => (language === 'ja' ? ja : en);
-  const { issues, loading, listError, repoPath, reload } = useProjectIssueOptions(
+  const { issues, repos, loading, listError, reload } = useProjectIssueOptions(
     projectId,
     enabled
   );
 
-  const selectedFromList = issues.find((i) => i.htmlUrl === value || `#${i.number}` === value);
+  const selectedFromList = issues.find((i) => i.htmlUrl === value);
 
   return (
     <div className="space-y-2">
@@ -104,12 +150,12 @@ function IssueLinkPicker({
             {loading
               ? t('Loading issues…', 'Issue を読み込み中…')
               : issues.length === 0
-                ? t('No open issues in project repo', 'プロジェクトのリポジトリに open Issue がありません')
+                ? t('No open issues in project repos', 'プロジェクトのリポジトリに open Issue がありません')
                 : t('Select an open issue…', 'open Issue を選択…')}
           </option>
           {issues.map((issue) => (
-            <option key={issue.number} value={issue.htmlUrl}>
-              {`#${issue.number} ${truncateTitle(issue.title)}`}
+            <option key={`${issue.owner}/${issue.repo}#${issue.number}`} value={issue.htmlUrl}>
+              {`${issue.owner}/${issue.repo}#${issue.number} ${truncateTitle(issue.title)}`}
             </option>
           ))}
         </select>
@@ -127,15 +173,15 @@ function IssueLinkPicker({
           )}
         </button>
       </div>
-      {repoPath ? (
+      {repos.length > 0 ? (
         <p className="text-[10px] font-mono text-gray-600">
-          {t('From', '対象')}: {repoPath}
+          {t('From', '対象')}: {repos.map((r) => `${r.owner}/${r.repo}`).join(', ')}
         </p>
       ) : null}
       {listError ? (
         <p className="text-[11px] text-amber-400/90">
           {t(
-            'Could not load dropdown (set project repo + PAT). You can still paste a URL below.',
+            'Could not load dropdown (set project repos + PAT). You can still paste a URL below.',
             'ドロップダウンを読み込めません（プロジェクトの repo と PAT を確認）。下に URL を貼れます。'
           )}{' '}
           <span className="text-gray-500">({listError})</span>
@@ -173,16 +219,33 @@ export function TaskGitHubIssuePanel({
   onComposeIntentChange,
   composeIssueInput = '',
   onComposeIssueInputChange,
+  composeCreateRepo = '',
+  onComposeCreateRepoChange,
 }: Props) {
   const linked = row ? readTaskGitHubIssue(row as Record<string, unknown>) : null;
   const hasLink = Boolean(linked?.github_issue_url);
   const [issueInput, setIssueInput] = useState('');
+  const [createRepo, setCreateRepo] = useState('');
   const [pending, setPending] = useState<
     'create' | 'link' | 'unlink' | 'refresh' | 'push-status' | null
   >(null);
   const [error, setError] = useState('');
 
+  const showCreateRepoPicker = compose
+    ? composeIntent === 'create'
+    : canLink && !hasLink;
+  const { repos } = useProjectIssueOptions(projectId, Boolean(canLink && showCreateRepoPicker));
+
   const t = (en: string, ja: string) => (language === 'ja' ? ja : en);
+
+  const effectiveCreateRepo =
+    (compose ? composeCreateRepo : createRepo) ||
+    (repos[0] ? formatGitHubOwnerRepo(repos[0].owner, repos[0].repo) : '');
+
+  const setEffectiveCreateRepo = (v: string) => {
+    if (compose) onComposeCreateRepoChange?.(v);
+    else setCreateRepo(v);
+  };
 
   const run = async (action: 'create' | 'link' | 'unlink' | 'refresh' | 'push-status') => {
     if (!canLink || pending || !row?.id || !onRowUpdated) return;
@@ -193,7 +256,8 @@ export function TaskGitHubIssuePanel({
         projectId,
         row.id,
         action,
-        action === 'link' ? issueInput : undefined
+        action === 'link' ? issueInput : undefined,
+        action === 'create' ? effectiveCreateRepo || undefined : undefined
       );
       onRowUpdated(result.row);
       if (action === 'link') setIssueInput('');
@@ -229,7 +293,7 @@ export function TaskGitHubIssuePanel({
         ) : (
           <p className="text-[11px] text-amber-400/90">
             {t(
-              'No project repo set — using app default (env) if configured.',
+              'No project repos set — using app default (env) if configured.',
               'プロジェクトのリポジトリ未設定 — 設定済みならアプリ既定（env）を使用します。'
             )}
           </p>
@@ -245,15 +309,27 @@ export function TaskGitHubIssuePanel({
             />
             {t('Do not create or link', '作成・リンクしない')}
           </label>
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-start gap-2 cursor-pointer">
             <input
               type="radio"
               name="github-compose"
               checked={composeIntent === 'create'}
               onChange={() => onComposeIntentChange?.('create')}
-              className="accent-brand-500"
+              className="mt-0.5 accent-brand-500"
             />
-            {t('Create GitHub Issue after save', '保存後に GitHub Issue を作成')}
+            <span className="flex-1 space-y-2">
+              <span className="block">
+                {t('Create GitHub Issue after save', '保存後に GitHub Issue を作成')}
+              </span>
+              {composeIntent === 'create' ? (
+                <CreateRepoSelect
+                  language={language}
+                  repos={repos}
+                  value={effectiveCreateRepo}
+                  onChange={setEffectiveCreateRepo}
+                />
+              ) : null}
+            </span>
           </label>
           <label className="flex items-start gap-2 cursor-pointer">
             <input
@@ -281,8 +357,8 @@ export function TaskGitHubIssuePanel({
         </div>
         <p className="text-[11px] text-gray-500">
           {t(
-            'Dropdown lists open issues from this project’s default repo. Paste a URL for any other repo. Runs after save.',
-            'ドロップダウンはこのプロジェクト既定リポジトリの open Issue です。他リポジトリは URL を貼付。保存後に実行されます。'
+            'Dropdown lists open issues from all repos bound to this project. Paste a URL for any other repo. Runs after save.',
+            'ドロップダウンはプロジェクトに紐付いた全リポジトリの open Issue です。他は URL 貼付。保存後に実行されます。'
           )}
         </p>
       </div>
@@ -332,10 +408,6 @@ export function TaskGitHubIssuePanel({
                 disabled={pending !== null}
                 onClick={() => void run('refresh')}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-surface-600 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-surface-800 disabled:opacity-50"
-                title={t(
-                  'Pull open/closed from GitHub (closed → Done)',
-                  'GitHub の open/closed を取り込み（closed → Done）'
-                )}
               >
                 {pending === 'refresh' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -349,10 +421,6 @@ export function TaskGitHubIssuePanel({
                 disabled={pending !== null}
                 onClick={() => void run('push-status')}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-surface-600 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-surface-800 disabled:opacity-50"
-                title={t(
-                  'Push task status: Done closes the issue; other statuses reopen it',
-                  'タスク状態を送信: Done で Issue を close、それ以外で reopen'
-                )}
               >
                 {pending === 'push-status' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -376,15 +444,16 @@ export function TaskGitHubIssuePanel({
               </button>
             </div>
           ) : null}
-          <p className="text-[11px] text-gray-500">
-            {t(
-              'Webhook auto-syncs when the issue is closed/reopened on GitHub. Refresh pulls; Push status sends Done↔closed.',
-              'GitHub で close/reopen すると Webhook で自動同期します。更新=取込、状態を送信=Done↔closed。'
-            )}
-          </p>
         </div>
       ) : canLink ? (
         <div className="space-y-2">
+          <CreateRepoSelect
+            language={language}
+            repos={repos}
+            value={effectiveCreateRepo}
+            onChange={setEffectiveCreateRepo}
+            disabled={pending !== null}
+          />
           <button
             type="button"
             disabled={pending !== null}
@@ -424,8 +493,8 @@ export function TaskGitHubIssuePanel({
           </button>
           <p className="text-[11px] text-gray-500">
             {t(
-              'Pick from the dropdown or paste a URL, then click Link. Save Changes does not apply the GitHub URL.',
-              'ドロップダウンで選ぶか URL を貼り、「リンク」をクリック。「変更を保存」では反映されません。'
+              'Pick from the dropdown (all project repos) or paste a URL, then Link. Save Changes does not apply the GitHub URL.',
+              '全プロジェクトリポジトリのドロップダウンか URL 貼付後に「リンク」。「変更を保存」では反映されません。'
             )}
           </p>
         </div>

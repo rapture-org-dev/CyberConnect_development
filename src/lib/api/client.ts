@@ -293,7 +293,8 @@ export async function taskGitHubIssueAction(
   projectId: string,
   rowId: string,
   action: 'create' | 'link' | 'unlink' | 'refresh' | 'push-status',
-  issueUrl?: string
+  issueUrl?: string,
+  createRepo?: string
 ): Promise<{
   row: SheetRow
   issue?: { number: number; htmlUrl: string; state: string }
@@ -301,7 +302,7 @@ export async function taskGitHubIssueAction(
 }> {
   return apiFetch('/api/sheet-rows/github-issue', {
     method: 'POST',
-    body: JSON.stringify({ projectId, rowId, action, issueUrl }),
+    body: JSON.stringify({ projectId, rowId, action, issueUrl, createRepo }),
   })
 }
 
@@ -310,13 +311,15 @@ export type ProjectGitHubIssueOption = {
   title: string
   htmlUrl: string
   state: 'open' | 'closed'
+  owner: string
+  repo: string
 }
 
 export async function listProjectGitHubIssuesAction(
   projectId: string,
   state: 'open' | 'closed' | 'all' = 'open'
 ): Promise<{
-  repo: { owner: string; repo: string }
+  repos: { owner: string; repo: string }[]
   issues: ProjectGitHubIssueOption[]
 }> {
   const q = new URLSearchParams({ projectId, state })

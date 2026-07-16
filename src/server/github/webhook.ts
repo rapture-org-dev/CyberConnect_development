@@ -13,7 +13,7 @@ import {
   mergeExtrasWithGitHubFields,
   normalizeIssueState,
 } from '@/lib/githubTaskSync'
-import { getEnvGitHubRepo, resolveGitHubRepoFromProject } from '@/lib/githubRepo'
+import { getEnvGitHubRepo, listGitHubReposForProject, repoRefKey } from '@/lib/githubRepo'
 
 type GitHubWebhookIssue = {
   number?: number
@@ -48,25 +48,24 @@ export function verifyGitHubWebhookSignature(rawBody: string, signatureHeader: s
   }
 }
 
-/** Projects that have this repo as their Create/default repo (legacy inbound scope). */
+/** Projects that include this repo in their bound list (or env fallback). */
 async function findProjectIdsForRepo(owner: string, repo: string): Promise<string[]> {
   const supabase = createServiceRoleClient()
-  const { data, error } = await supabase.from('projects').select('id, github_owner, github_repo')
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, github_owner, github_repo, github_repos')
   if (error) throw new Error(error.message)
 
+  const targetKey = repoRefKey({ owner, repo })
   const env = getEnvGitHubRepo()
   return (data ?? [])
     .filter((p) => {
-      try {
-        const resolved = resolveGitHubRepoFromProject({
-          github_owner: p.github_owner,
-          github_repo: p.github_repo,
-        })
-        return resolved.owner === owner && resolved.repo === repo
-      } catch {
-        if (!env) return false
-        return env.owner === owner && env.repo === repo
+      const list = listGitHubReposForProject(p)
+      if (list.some((r) => repoRefKey(r) === targetKey)) return true
+      if (list.length === 0 && env) {
+        return repoRefKey(env) === targetKey
       }
+      return false
     })
     .map((p) => String(p.id))
 }

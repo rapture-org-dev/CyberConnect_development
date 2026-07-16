@@ -75,9 +75,16 @@ Per-project GitHub repository (Create / bare #n / dropdown)
 Link rules
 --------------------------------------------------------------------------------
   - Full issue URL → any GitHub repo (stores owner/repo on the task)
-  - Bare #123 / 123 → project default repo (or env); error if neither is set
-  - Create always uses project/env default repo
+  - Bare #123 / 123 → project primary repo (or env); error if neither is set
+  - Create uses selected project repo (primary by default) when multiple are bound
   - Refresh / Push / auto-push / webhook use the linked issue’s owner/repo
+  - Project may bind multiple repos (github_repos jsonb); dropdown lists open
+    issues from all of them
+
+Migration (multi-repo)
+--------------------------------------------------------------------------------
+  database/migrate_add_project_github_repos.sql
+  ADD projects.github_repos jsonb; backfills from github_owner/github_repo
 
 Auto-push on status save: ENABLED
   When a linked task is saved and status maps to a different GitHub open/closed

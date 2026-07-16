@@ -259,6 +259,7 @@ create table public.projects (
   team_id uuid null,
   github_owner text not null default ''::text,
   github_repo text not null default ''::text,
+  github_repos jsonb not null default '[]'::jsonb,
   constraint projects_pkey primary key (id),
   constraint projects_client_id_fkey foreign KEY (client_id) references profiles (id) on delete set null,
   constraint projects_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete set null,

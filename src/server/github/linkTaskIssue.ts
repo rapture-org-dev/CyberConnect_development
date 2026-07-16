@@ -20,8 +20,12 @@ import {
   setGitHubIssueState,
   type GitHubIssueListItem,
 } from '@/server/github/issues'
-import { loadGitHubRepoForProject } from '@/server/github/projectRepo'
-import { getEnvGitHubRepo, type GitHubRepoRef } from '@/lib/githubRepo'
+import { loadGitHubRepoForProject, loadGitHubReposForProject } from '@/server/github/projectRepo'
+import {
+  getEnvGitHubRepo,
+  parseGitHubOwnerRepo,
+  type GitHubRepoRef,
+} from '@/lib/githubRepo'
 import {
   buildTaskPatchFromGitHubState,
   desiredGitHubStateFromTaskStatus,
@@ -121,7 +125,8 @@ async function loadTaskRow(projectId: string, rowId: string): Promise<SheetRow> 
 
 export async function createGitHubIssueForTaskAction(
   projectId: string,
-  rowId: string
+  rowId: string,
+  createRepoFull?: string
 ): Promise<LinkTaskGitHubIssueResult> {
   const supabase = await createClient()
   await assertCanLinkGitHubIssue(supabase, projectId)
@@ -132,7 +137,33 @@ export async function createGitHubIssueForTaskAction(
     throw new Error('This task is already linked to a GitHub issue. Unlink first or open the existing link.')
   }
 
-  const repoRef = await loadGitHubRepoForProject(projectId, supabase)
+  const allowed = await loadGitHubReposForProject(projectId, supabase)
+  let repoRef: GitHubRepoRef
+  if (createRepoFull?.trim()) {
+    const parsed = parseGitHubOwnerRepo(createRepoFull)
+    if (!parsed) {
+      throw new Error('Invalid create repository. Use owner/repo.')
+    }
+    const ok = allowed.some(
+      (r) =>
+        r.owner.toLowerCase() === parsed.owner.toLowerCase() &&
+        r.repo.toLowerCase() === parsed.repo.toLowerCase()
+    )
+    if (!ok) {
+      throw new Error(
+        `Repository ${parsed.owner}/${parsed.repo} is not bound to this project. Add it in Edit Project.`
+      )
+    }
+    repoRef = parsed
+  } else {
+    if (!allowed[0]) {
+      throw new Error(
+        'GitHub repository is not configured. Set one or more repos on the project or GITHUB_OWNER/GITHUB_REPO env.'
+      )
+    }
+    repoRef = allowed[0]
+  }
+
   const issue = await createGitHubIssue(
     {
       title: buildIssueTitle(row as Record<string, unknown>),
@@ -295,15 +326,48 @@ export async function pushTaskStatusToGitHubAction(
   return { row: saved, issue, created: false }
 }
 
-/** List issues from the project's default GitHub repo (for Link dropdown). */
+/** List issues from all GitHub repos bound to the project (for Link dropdown). */
 export async function listProjectGitHubIssuesAction(
   projectId: string,
   state: 'open' | 'closed' | 'all' = 'open'
-): Promise<{ repo: GitHubRepoRef; issues: GitHubIssueListItem[] }> {
+): Promise<{
+  repos: GitHubRepoRef[]
+  issues: Array<GitHubIssueListItem & { owner: string; repo: string }>
+}> {
   const supabase = await createClient()
   await assertCanLinkGitHubIssue(supabase, projectId)
 
-  const repo = await loadGitHubRepoForProject(projectId, supabase)
-  const issues = await listGitHubIssues(repo, { state, perPage: 50, maxPages: 2 })
-  return { repo, issues }
+  const repos = await loadGitHubReposForProject(projectId, supabase)
+  if (repos.length === 0) {
+    throw new Error(
+      'GitHub repository is not configured. Set one or more repos on the project or GITHUB_OWNER/GITHUB_REPO env.'
+    )
+  }
+
+  const issues: Array<GitHubIssueListItem & { owner: string; repo: string }> = []
+  const errors: string[] = []
+
+  for (const repo of repos) {
+    try {
+      const batch = await listGitHubIssues(repo, { state, perPage: 50, maxPages: 2 })
+      for (const issue of batch) {
+        issues.push({ ...issue, owner: repo.owner, repo: repo.repo })
+      }
+    } catch (err) {
+      errors.push(
+        `${repo.owner}/${repo.repo}: ${err instanceof Error ? err.message : 'failed'}`
+      )
+    }
+  }
+
+  if (issues.length === 0 && errors.length > 0) {
+    throw new Error(`Could not load issues. ${errors.join(' | ')}`)
+  }
+
+  issues.sort((a, b) => {
+    if (a.state !== b.state) return a.state === 'open' ? -1 : 1
+    return b.number - a.number
+  })
+
+  return { repos, issues }
 }

@@ -104,6 +104,8 @@ export interface Project {
   /** GitHub Issues target (empty = fall back to GITHUB_OWNER / GITHUB_REPO env). */
   github_owner?: string;
   github_repo?: string;
+  /** JSON array of "owner/repo" strings (first is primary). */
+  github_repos?: string[];
 }
 
 export interface ExportOptions {

@@ -26,7 +26,7 @@ import {
 import { shouldRenderMergedBilingualBlock } from '@/lib/data';
 import { taskGitHubIssueAction } from '@/lib/api/client';
 import { useWorkspace } from '@/components/WorkspaceProvider';
-import { formatGitHubOwnerRepo } from '@/lib/githubRepo';
+import { formatProjectGitHubReposLabel } from '@/lib/githubRepo';
 
 interface Props {
   tab: SheetTab;
@@ -94,6 +94,7 @@ export function AddRowDrawer({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [githubIntent, setGithubIntent] = useState<GitHubComposeIntent>('none');
   const [githubIssueInput, setGithubIssueInput] = useState('');
+  const [githubCreateRepo, setGithubCreateRepo] = useState('');
 
   const canLinkGitHub =
     isTasksTab(tab.id) && (projectSheetRole === 'pm' || projectSheetRole === 'dev');
@@ -166,7 +167,8 @@ export function AddRowDrawer({
             projectId,
             savedRow.id,
             githubIntent === 'create' ? 'create' : 'link',
-            githubIntent === 'link' ? githubIssueInput : undefined
+            githubIntent === 'link' ? githubIssueInput : undefined,
+            githubIntent === 'create' ? githubCreateRepo || undefined : undefined
           );
           applySheetRowLocal(projectId, tab.id, result.row);
         } catch (ghErr) {
@@ -348,12 +350,14 @@ export function AddRowDrawer({
                 projectId={projectId}
                 language={language}
                 canLink={canLinkGitHub}
-                repoLabel={formatGitHubOwnerRepo(project?.github_owner, project?.github_repo) || undefined}
+                repoLabel={formatProjectGitHubReposLabel(project ?? {}) || undefined}
                 compose
                 composeIntent={githubIntent}
                 onComposeIntentChange={setGithubIntent}
                 composeIssueInput={githubIssueInput}
                 onComposeIssueInputChange={setGithubIssueInput}
+                composeCreateRepo={githubCreateRepo}
+                onComposeCreateRepoChange={setGithubCreateRepo}
               />
             ) : null}
             {fieldSpecs.map(({ col, jaKey }) => {

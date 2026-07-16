@@ -16,10 +16,12 @@ export type TeamProjectCoreDetailsInput = {
   name_ja: string;
   client: string;
   description: string;
-  /** Optional `owner/repo` or leave empty to use env defaults. */
+  /** Optional single `owner/repo` (legacy). Prefer github_repos. */
   github_full?: string;
   github_owner?: string;
   github_repo?: string;
+  /** One or more `owner/repo` (or URLs). First is primary for Create. */
+  github_repos?: string[];
 }
 
 /**
@@ -321,13 +323,18 @@ export async function createProjectAction(project: Partial<Project>): Promise<{ 
         github_full: (project as { github_full?: string }).github_full,
         github_owner: project.github_owner,
         github_repo: project.github_repo,
+        github_repos:
+          (project as { github_repos?: unknown }).github_repos ??
+          (project as { github_repos_text?: string }).github_repos_text,
       })
       payload.github_owner = gh.github_owner
       payload.github_repo = gh.github_repo
+      payload.github_repos = gh.github_repos
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : 'Invalid GitHub repository' }
     }
     delete payload.github_full
+    delete payload.github_repos_text
 
     const { data, error } = await supabase
       .from('projects')
@@ -393,15 +400,18 @@ export async function updateProjectAction(id: string, updates: Partial<Project>)
   if (
     'github_owner' in payload ||
     'github_repo' in payload ||
-    'github_full' in payload
+    'github_full' in payload ||
+    'github_repos' in payload
   ) {
     const gh = normalizeProjectGitHubFields({
       github_full: payload.github_full as string | undefined,
       github_owner: payload.github_owner as string | undefined,
       github_repo: payload.github_repo as string | undefined,
+      github_repos: payload.github_repos,
     })
     payload.github_owner = gh.github_owner
     payload.github_repo = gh.github_repo
+    payload.github_repos = gh.github_repos
     delete payload.github_full
   }
 
@@ -463,9 +473,11 @@ export async function updateTeamProjectCoreDetailsAction(
       github_full: input.github_full,
       github_owner: input.github_owner,
       github_repo: input.github_repo,
+      github_repos: input.github_repos,
     })
     payload.github_owner = gh.github_owner
     payload.github_repo = gh.github_repo
+    payload.github_repos = gh.github_repos
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : 'Invalid GitHub repository' }
   }
