@@ -309,6 +309,8 @@ export async function taskGitHubIssueAction(
 export type ProjectGitHubIssueOption = {
   number: number
   title: string
+  /** Original GitHub title before DeepL (when lang=en). */
+  titleOriginal?: string
   htmlUrl: string
   state: 'open' | 'closed'
   owner: string
@@ -317,12 +319,14 @@ export type ProjectGitHubIssueOption = {
 
 export async function listProjectGitHubIssuesAction(
   projectId: string,
-  state: 'open' | 'closed' | 'all' = 'open'
+  state: 'open' | 'closed' | 'all' = 'open',
+  displayLang?: 'en' | 'ja'
 ): Promise<{
   repos: { owner: string; repo: string }[]
   issues: ProjectGitHubIssueOption[]
 }> {
   const q = new URLSearchParams({ projectId, state })
+  if (displayLang) q.set('lang', displayLang)
   return apiFetch(`/api/projects/github-issues?${q.toString()}`)
 }
 

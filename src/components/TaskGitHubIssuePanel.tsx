@@ -49,7 +49,11 @@ function normalizeBoundRepos(boundRepos?: string[]): { owner: string; repo: stri
   return out;
 }
 
-function useProjectIssueOptions(projectId: string, enabled: boolean) {
+function useProjectIssueOptions(
+  projectId: string,
+  enabled: boolean,
+  displayLang: Language
+) {
   const [issues, setIssues] = useState<ProjectGitHubIssueOption[]>([]);
   const [repos, setRepos] = useState<{ owner: string; repo: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,7 +64,11 @@ function useProjectIssueOptions(projectId: string, enabled: boolean) {
     setLoading(true);
     setListError('');
     try {
-      const result = await listProjectGitHubIssuesAction(projectId, 'open');
+      const result = await listProjectGitHubIssuesAction(
+        projectId,
+        'open',
+        displayLang === 'ja' ? 'ja' : 'en'
+      );
       setIssues(result.issues);
       setRepos(result.repos);
     } catch (e) {
@@ -70,7 +78,7 @@ function useProjectIssueOptions(projectId: string, enabled: boolean) {
     } finally {
       setLoading(false);
     }
-  }, [enabled, projectId]);
+  }, [enabled, projectId, displayLang]);
 
   useEffect(() => {
     void reload();
@@ -157,7 +165,11 @@ function IssueLinkPicker({
   repoFilter?: string;
 }) {
   const t = (en: string, ja: string) => (language === 'ja' ? ja : en);
-  const { issues, loading, listError, reload } = useProjectIssueOptions(projectId, enabled);
+  const { issues, loading, listError, reload } = useProjectIssueOptions(
+    projectId,
+    enabled,
+    language
+  );
 
   const filtered = useMemo(() => {
     if (!repoFilter) return issues;
@@ -189,7 +201,11 @@ function IssueLinkPicker({
                 : t('Select an open issue…', 'open Issue を選択…')}
           </option>
           {filtered.map((issue) => (
-            <option key={`${issue.owner}/${issue.repo}#${issue.number}`} value={issue.htmlUrl}>
+            <option
+              key={`${issue.owner}/${issue.repo}#${issue.number}`}
+              value={issue.htmlUrl}
+              title={issue.titleOriginal || issue.title}
+            >
               {`#${issue.number} ${truncateTitle(issue.title)}`}
             </option>
           ))}
@@ -264,7 +280,11 @@ export function TaskGitHubIssuePanel({
 
   const needsIssueList =
     canLink && (compose ? composeIntent === 'create' || composeIntent === 'link' : !hasLink);
-  const { repos: apiRepos } = useProjectIssueOptions(projectId, Boolean(needsIssueList));
+  const { repos: apiRepos } = useProjectIssueOptions(
+    projectId,
+    Boolean(needsIssueList),
+    language
+  );
 
   const repos = useMemo(() => {
     const fromBound = normalizeBoundRepos(boundRepos);

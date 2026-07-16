@@ -30,6 +30,7 @@ import {
   buildTaskPatchFromGitHubState,
   desiredGitHubStateFromTaskStatus,
 } from '@/lib/githubTaskSync'
+import { deeplTranslateMany, isDeepLAutoTranslateEnabled } from '@/server/deepl'
 
 export type LinkTaskGitHubIssueResult = {
   row: SheetRow
@@ -326,13 +327,48 @@ export async function pushTaskStatusToGitHubAction(
   return { row: saved, issue, created: false }
 }
 
+/** Translate titles in order; empty titles stay empty. Failures return originals. */
+async function maybeTranslateIssueTitles(
+  titles: string[],
+  displayLang: 'en' | 'ja' | undefined
+): Promise<string[]> {
+  if (displayLang !== 'en' || !isDeepLAutoTranslateEnabled() || titles.length === 0) {
+    return titles
+  }
+
+  try {
+    const indices: number[] = []
+    const batch: string[] = []
+    titles.forEach((title, i) => {
+      const t = title.trim()
+      if (t) {
+        indices.push(i)
+        batch.push(t)
+      }
+    })
+    if (batch.length === 0) return titles
+
+    const translated = await deeplTranslateMany(batch, 'EN')
+    const out = [...titles]
+    indices.forEach((idx, j) => {
+      const next = translated[j]?.trim()
+      if (next) out[idx] = next
+    })
+    return out
+  } catch (err) {
+    console.error('DeepL translate GitHub issue titles failed:', err)
+    return titles
+  }
+}
+
 /** List issues from all GitHub repos bound to the project (for Link dropdown). */
 export async function listProjectGitHubIssuesAction(
   projectId: string,
-  state: 'open' | 'closed' | 'all' = 'open'
+  state: 'open' | 'closed' | 'all' = 'open',
+  displayLang?: 'en' | 'ja'
 ): Promise<{
   repos: GitHubRepoRef[]
-  issues: Array<GitHubIssueListItem & { owner: string; repo: string }>
+  issues: Array<GitHubIssueListItem & { owner: string; repo: string; titleOriginal?: string }>
 }> {
   const supabase = await createClient()
   await assertCanLinkGitHubIssue(supabase, projectId)
@@ -344,7 +380,9 @@ export async function listProjectGitHubIssuesAction(
     )
   }
 
-  const issues: Array<GitHubIssueListItem & { owner: string; repo: string }> = []
+  const issues: Array<
+    GitHubIssueListItem & { owner: string; repo: string; titleOriginal?: string }
+  > = []
   const errors: string[] = []
 
   for (const repo of repos) {
@@ -368,6 +406,16 @@ export async function listProjectGitHubIssuesAction(
     if (a.state !== b.state) return a.state === 'open' ? -1 : 1
     return b.number - a.number
   })
+
+  if (displayLang === 'en') {
+    const originals = issues.map((i) => i.title)
+    const translated = await maybeTranslateIssueTitles(originals, displayLang)
+    for (let i = 0; i < issues.length; i += 1) {
+      const item = issues[i]!
+      item.titleOriginal = originals[i]
+      item.title = translated[i] ?? item.title
+    }
+  }
 
   return { repos, issues }
 }
