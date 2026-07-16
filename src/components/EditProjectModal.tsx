@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import type { Project } from '@/types';
 import { X, Loader } from 'lucide-react';
 import { updateTeamProjectCoreDetailsAction } from '@/lib/api/client';
+import { formatGitHubOwnerRepo } from '@/lib/githubRepo';
 
 interface Props {
   project: Project;
@@ -18,6 +19,9 @@ export function EditProjectModal({ project, onClose, onSaved, onNotify }: Props)
   const [nameJa, setNameJa] = useState(project.name_ja || project.nameJa || '');
   const [client, setClient] = useState(project.client || '');
   const [desc, setDesc] = useState(project.description || '');
+  const [githubFull, setGithubFull] = useState(
+    formatGitHubOwnerRepo(project.github_owner, project.github_repo)
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -26,6 +30,7 @@ export function EditProjectModal({ project, onClose, onSaved, onNotify }: Props)
     setNameJa(project.name_ja || project.nameJa || '');
     setClient(project.client || '');
     setDesc(project.description || '');
+    setGithubFull(formatGitHubOwnerRepo(project.github_owner, project.github_repo));
     setError('');
   }, [project]);
 
@@ -44,6 +49,7 @@ export function EditProjectModal({ project, onClose, onSaved, onNotify }: Props)
         name_ja: nameJa.trim(),
         client: client.trim(),
         description: desc.trim(),
+        github_full: githubFull.trim(),
       });
       if (!res.success || !res.data) {
         throw new Error(res.error || 'Failed to save');
@@ -77,7 +83,7 @@ export function EditProjectModal({ project, onClose, onSaved, onNotify }: Props)
             <h2 id="edit-project-title" className="text-lg font-semibold text-white">
               Edit project
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Update name, client, and description</p>
+            <p className="text-xs text-gray-500 mt-0.5">Update name, client, description, and GitHub repo</p>
           </div>
           <button
             type="button"
@@ -134,6 +140,20 @@ export function EditProjectModal({ project, onClose, onSaved, onNotify }: Props)
               disabled={saving}
               className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none disabled:opacity-50"
             />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 mb-1.5 block">GitHub repository</label>
+            <input
+              value={githubFull}
+              onChange={(e) => setGithubFull(e.target.value)}
+              placeholder="owner/repo (empty = app default from env)"
+              disabled={saving}
+              className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:opacity-50"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Tasks create/link Issues in this repository. PAT must have access to it.
+            </p>
           </div>
 
           {error && (

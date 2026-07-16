@@ -22,6 +22,9 @@ import {
   isMirroredBilingualField,
 } from '@/lib/bilingualFields';
 import { BilingualFieldPairEditor } from '@/components/BilingualFieldPairEditor';
+import { TaskGitHubIssuePanel } from '@/components/TaskGitHubIssuePanel';
+import { useWorkspace } from '@/components/WorkspaceProvider';
+import { formatGitHubOwnerRepo } from '@/lib/githubRepo';
 import { X, Save, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -55,6 +58,7 @@ export function SheetRowDetail({
   teamAdminOrOwner = false,
   isPlatformAdmin = false,
 }: Props) {
+  const { applySheetRowLocal } = useWorkspace();
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -156,13 +160,28 @@ export function SheetRowDetail({
         </button>
       </div>
 
-      <form onSubmit={handleSave} className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {saveError && (
           <div className="px-5 pt-4 shrink-0">
             <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2">{saveError}</p>
           </div>
         )}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+          {/* Outside the save form: Link/Create must not be tied to Save Changes / Enter. */}
+          {isTasksTab(tab.id) && project?.id ? (
+            <TaskGitHubIssuePanel
+              projectId={project.id}
+              row={{ ...(formData as SheetRow), id: row.id, project_id: project.id }}
+              language={language}
+              canLink={canManageSheet || projectSheetRole === 'dev'}
+              repoLabel={formatGitHubOwnerRepo(project.github_owner, project.github_repo) || undefined}
+              onRowUpdated={(updated) => {
+                setFormData((prev) => ({ ...prev, ...updated }));
+                applySheetRowLocal(project.id, tab.id, updated);
+              }}
+            />
+          ) : null}
+          <form id="sheet-row-detail-form" onSubmit={handleSave} className="space-y-4">
           {tab.columns.map(col => {
             const mergedJaKey = getBilingualRowFieldKey(tab.id, col.key);
             if (
@@ -367,6 +386,7 @@ export function SheetRowDetail({
               </div>
             );
           })}
+          </form>
         </div>
 
         <div className="p-5 border-t border-surface-700 bg-surface-900 flex items-center gap-3 shrink-0">
@@ -382,6 +402,7 @@ export function SheetRowDetail({
               </button>
               <button
                 type="submit"
+                form="sheet-row-detail-form"
                 disabled={savePending}
                 className="flex-1 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-600/20 text-xs"
               >
@@ -399,7 +420,7 @@ export function SheetRowDetail({
             </button>
           )}
         </div>
-      </form>
+      </div>
     </div>
   );
 }

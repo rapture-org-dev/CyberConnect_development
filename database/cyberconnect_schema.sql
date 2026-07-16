@@ -257,6 +257,8 @@ create table public.projects (
   workspace_type public.workspace_type not null default 'team'::workspace_type,
   owner_id uuid not null,
   team_id uuid null,
+  github_owner text not null default ''::text,
+  github_repo text not null default ''::text,
   constraint projects_pkey primary key (id),
   constraint projects_client_id_fkey foreign KEY (client_id) references profiles (id) on delete set null,
   constraint projects_owner_id_fkey foreign KEY (owner_id) references profiles (id) on delete set null,

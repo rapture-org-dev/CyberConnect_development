@@ -1,0 +1,829 @@
+CyberConnect — Future Features Roadmap & Ticket Priority Guide
+================================================================================
+Version: 2026-05-31
+Audience: You create Tasks-sheet tickets yourself from this doc, then implement
+          one ticket at a time (always ticket-driven).
+
+Handbook habits (still apply when YOU write the ticket):
+  - Ticket body = WHY + acceptance criteria + must-not cases + golden examples.
+  - One ticket = one shippable slice (not a whole epic).
+  - Leave WHY in code comments for domain rules (overdue, sprint scope, etc.).
+
+================================================================================
+PART A — WORK ORDER (WHAT TO DO 1ST, 2ND, 3RD, …)
+================================================================================
+
+Priority logic:
+  - Ship visible PM/dev value on the Tasks sheet early (low risk, fast).
+  - Build "sprint" as real data before charts/boards that depend on it.
+  - Defer new business domains (CRM, accounting) until core delivery UX is solid.
+  - Billing/accounting are large and risky; do after planning views exist.
+
+Already shipped (do NOT re-ticket unless enhancing):
+  [x] Custom column EN/JA labels independent
+  [x] Sheet header alignment (JA)
+  [x] Drag column borders to resize (saved for PM/admin)
+
+--------------------------------------------------------------------------------
+PRIORITY 1 — FIRST (do this before anything else in the list below)
+--------------------------------------------------------------------------------
+Feature:  Expired / overdue task row color (C1)
+Why now:  Small, daily-use win; no DB migration; boss-visible on Tasks tab.
+Ticket:   "Highlight overdue task rows on Tasks sheet (deadline passed, not Done)"
+Estimate: S (1–2 days)
+
+--------------------------------------------------------------------------------
+PRIORITY 2 — SECOND
+--------------------------------------------------------------------------------
+Feature:  Sprint implementation — structured sprints (C3)
+Why now:  Kanban, burndown, and better Gantt all need sprint start/end + identity.
+Ticket:   "Add project_sprints table + API + assign tasks to sprint (not free text only)"
+Estimate: L (1–2 weeks)
+Split tickets if needed:
+  2a DB + RLS + API
+  2b UI sprint CRUD
+  2c Task sheet dropdown / migrate text sprint values
+
+--------------------------------------------------------------------------------
+PRIORITY 3 — THIRD
+--------------------------------------------------------------------------------
+Feature:  Kanban board (C4)
+Why now:  High-value workflow UI once status + sprint exist.
+Depends:  Priority 2 recommended (filter by sprint).
+Ticket:   "Tasks Kanban view with drag-to-change status"
+Estimate: L (1–2 weeks)
+
+--------------------------------------------------------------------------------
+PRIORITY 4 — FOURTH
+--------------------------------------------------------------------------------
+Feature:  Burn-down chart (C5)
+Why now:  Sprint reporting; needs sprint date range from Priority 2.
+Depends:  Priority 2 required.
+Ticket:   "Sprint burndown chart (remaining work vs ideal line)"
+Estimate: M–L (about 1 week)
+
+--------------------------------------------------------------------------------
+PRIORITY 5 — FIFTH
+--------------------------------------------------------------------------------
+Feature:  Gantt chart — full / enhanced (C6)
+Why now:  Schedule tab exists but is basic; extend before Master Schedule epic.
+Depends:  Priority 2 helps (sprint lanes); can start with deadline/P/Day only.
+Ticket:   "Enhance Schedule/Gantt: zoom, drag deadline, optional start_date column"
+Estimate: L–XL (2–4 weeks; split into 5a read-only zoom, 5b drag save)
+
+--------------------------------------------------------------------------------
+PRIORITY 6 — SIXTH
+--------------------------------------------------------------------------------
+Feature:  Light mode / dark mode (C2)
+Why now:  Broad UI touch; safer after core Tasks views (P1–P5) are stable.
+Ticket:   "User theme toggle (light/dark) with persistence"
+Estimate: M (3–5 days)
+
+--------------------------------------------------------------------------------
+PRIORITY 7 — SEVENTH
+--------------------------------------------------------------------------------
+Feature:  Synchronization with shared spreadsheets (C7)
+Why now:  Import exists; live sync needs webhook + secret (see requirements-alignment-todo.txt).
+Ticket:   "Sheet sync webhook: upsert rows by code with shared secret"
+Estimate: XL (MVP 1–2 weeks; Google Apps Script sample doc)
+Depends:  none, but coordinate with security review.
+
+--------------------------------------------------------------------------------
+PRIORITY 8 — EIGHTH
+--------------------------------------------------------------------------------
+Feature:  AI-based task suggestions (C8)
+Why now:  Uses existing sheets as context; confirm-before-insert.
+Ticket:   "Suggest tasks from epic/function context (review then add rows)"
+Estimate: L (1–2 weeks MVP)
+
+--------------------------------------------------------------------------------
+PRIORITY 9 — NINTH
+--------------------------------------------------------------------------------
+Feature:  Billing & payment management (C10)
+Why now:  Revenue-critical but separate from delivery sheets; replace UpgradeModal mock.
+Ticket:   "Stripe checkout + subscription webhooks for team plans"
+Estimate: XL
+
+--------------------------------------------------------------------------------
+PRIORITY 10 — TENTH
+--------------------------------------------------------------------------------
+Feature:  Sales lead management (C9)
+Why now:  New CRM domain; not blocking task delivery.
+Ticket:   "Team leads pipeline (stages) + create project from Won"
+Estimate: XL
+
+--------------------------------------------------------------------------------
+PRIORITY 11 — LAST (among this backlog)
+--------------------------------------------------------------------------------
+Feature:  Accounting software integration (C11)
+Why now:  Depends on real invoices/payments from Priority 9.
+Depends:  Priority 9.
+Ticket:   "Connect [Freee OR one provider]: OAuth + export/sync invoices"
+Estimate: XL
+
+================================================================================
+PART B — HOW YOU USE TICKETS (YOUR WORKFLOW)
+================================================================================
+
+1) Look at Part A — pick the next priority whose dependencies are done.
+
+2) Create ONE ticket in the CyberConnect Tasks sheet (EN/JA) using Part E template.
+   - Copy acceptance criteria from Part D (feature section C1–C11).
+   - Add golden examples before you code (handbook evaluation habit).
+
+3) Map the ticket to the repo (every time):
+   - UI grid:     src/components/GenericSheet.tsx
+   - Tab config:  src/lib/data.ts (sheetTabs)
+   - Rows API:    src/server/rows.ts, src/app/api/projects/.../rows
+   - Layouts:     src/lib/sheetColumnLayout.ts, sheet-column-layouts API
+   - Auth:        src/lib/team-project-auth.ts, database/cyberconnect_rls.sql
+   - Schema:      database/cyberconnect_schema.sql
+
+4) Implement: schema (if needed) → server/API → UI → i18n → manual test → PR.
+
+5) Close ticket only when Part D "Definition of done" is met.
+
+6) Commit message (repo style): feat/fix(scope): one-line why
+
+================================================================================
+PART C — CURRENT BASELINE (WHAT EXISTS TODAY)
+================================================================================
+
+Already in product:
+  [x] Tasks sheet: sprint/epic/status/deadline/person_day/assignee (text sprint)
+  [x] Schedule tab: ScheduleChartView — timeline bars from task deadline + P/Day
+  [x] Backlog / process_chart sheets with sprint columns (text)
+  [x] Excel/CSV import + column mapping (shared spreadsheet IN, not live sync)
+  [x] Per-project column layouts + drag-resize column widths (GenericSheet)
+  [x] Bilingual EN/JA fields + DeepL on save/import
+  [x] Dark UI theme (Tailwind surface-* palette); NO user light/dark toggle
+  [x] Team billing owner + UpgradeModal (mock payment UI, not full billing)
+  [x] master_schedule tab placeholder (MasterScheduleView — not full Gantt)
+
+Not present yet (your backlog):
+  [ ] Burn-down chart
+  [ ] Sprint entity (dates, goals, capacity) — only free-text sprint column
+  [ ] Kanban board view
+  [ ] Light mode / dark mode switch
+  [ ] Full Gantt (dependencies, drag dates, multi-project)
+  [ ] Sales lead management (CRM)
+  [ ] Billing + payment management (production-grade)
+  [ ] Accounting software integration
+  [ ] AI-based task suggestions
+  [ ] Live sync with Google Sheets / shared spreadsheets
+  [ ] Expired / overdue task row highlighting
+
+Related existing TODO file:
+  requirements-alignment-todo.txt (webhook sheet-sync mentioned, not built)
+
+================================================================================
+PART D — FEATURE-BY-FEATURE DETAIL (FOR TICKET BODIES)
+================================================================================
+
+Work order: always follow Part A (Priority 1 → 11), not the C-number order below.
+
+------------------------------------------------------------------------------
+C1. Change color of expired task row          [Priority 1]
+------------------------------------------------------------------------------
+Status: NOT IMPLEMENTED
+Complexity: S (1–2 days)
+Depends on: none
+
+Why:
+  PM/devs must see overdue work at a glance on the Tasks sheet.
+
+Who / when:
+  Anyone with Tasks tab access; JA/EN UI; compares deadline vs today (local TZ).
+
+Definition of done:
+  - Row background or left border distinct when deadline < today AND status not Done
+  - Done / empty deadline: no overdue styling
+  - Styling works in sticky header + scroll grid (GenericSheet)
+  - Optional: legend in toolbar ("Overdue")
+
+Red team:
+  - Must not mark completed tasks overdue
+  - Must not break row selection / batch delete / inline edit colors
+
+Data model:
+  None (uses task_rows.deadline, task_rows.status)
+
+Implementation steps:
+  1. Add helper: isTaskRowOverdue(row, today) in src/lib/ or next to tasks utils
+  2. In GenericSheet <tr>, when tab.id === 'tasks', append overdue className
+  3. Tailwind: e.g. bg-red-950/30 or border-l-2 border-red-500/60
+  4. Document rule in code comment (WHY: business rule for "expired")
+  5. Golden tests: 5 rows (past deadline + In progress, past + Done, future, blank)
+
+Files to read:
+  src/components/GenericSheet.tsx, src/lib/data.ts (isTasksTab), task status enum
+
+------------------------------------------------------------------------------
+C2. Light mode / dark mode                    [Priority 6]
+------------------------------------------------------------------------------
+Status: PARTIAL (dark-only styling)
+Complexity: M (3–5 days)
+Depends on: none
+
+Why:
+  Accessibility and user preference; boss-requested parity with common SaaS.
+
+Who / when:
+  All routes; persist preference per user (profile or localStorage fallback).
+
+Definition of done:
+  - Toggle in Header or dashboard (EN/JA label)
+  - Light theme: readable contrast for tables, modals, login
+  - Persists across refresh (DB column profiles.theme or localStorage)
+  - No flash of wrong theme on load (class on <html> early)
+
+Red team:
+  - Do not break brand colors on status badges
+  - Charts/schedule bars still visible in light mode
+
+Data model (optional):
+  ALTER profiles ADD theme text DEFAULT 'dark' CHECK (theme IN ('light','dark'));
+
+Implementation steps:
+  1. Define CSS variables or Tailwind darkMode: 'class' on documentElement
+  2. Split surface-* usage into theme-aware tokens (incremental: layout shell first)
+  3. ThemeProvider + toggle; wire DashboardLanguageToggle area or Header
+  4. API PATCH profile theme if storing server-side
+  5. Golden: screenshot checklist for Tasks sheet + modal + login
+
+Files to read:
+  tailwind.config.ts, src/components/Header.tsx, src/app/layout.tsx
+
+------------------------------------------------------------------------------
+C3. Sprint implementation function (structured sprints)  [Priority 2]
+------------------------------------------------------------------------------
+Status: PARTIAL (sprint is free text on tasks/backlog)
+Complexity: L (1–2 weeks)
+Depends on: none (blocks burndown, kanban grouping, better Gantt)
+
+Why:
+  Real sprint planning: start/end, name, goal, velocity — not only a string column.
+
+Who / when:
+  PM creates sprints per project; devs assign tasks to a sprint.
+
+Definition of done:
+  - Table project_sprints (id, project_id, name, name_ja, start_date, end_date, goal, status)
+  - CRUD API under /api/projects/[id]/sprints
+  - Tasks: sprint_id FK OR validated dropdown synced with sprint names
+  - UI: "Sprints" sub-page or modal from Tasks toolbar
+  - Migrating existing sprint text → best-effort match on first save
+
+Red team:
+  - RLS: only project members see sprints
+  - Deleting sprint must not delete tasks (set null or block)
+
+Data model:
+  project_sprints + task_rows.sprint_id (migration from text sprint)
+
+Implementation steps:
+  1. SQL migration + RLS policies (mirror project_members pattern)
+  2. server/sprints.ts + route handlers
+  3. Replace/enhance sprint column type 'select' with dynamic options from API
+  4. WorkspaceProvider cache invalidation on sprint change
+  5. Golden: create 2 sprints, assign tasks, filter tasks by sprint
+
+Files to read:
+  database/cyberconnect_schema.sql (task_rows), src/server/rows.ts, data.ts tasks tab
+
+------------------------------------------------------------------------------
+C4. Kanban board                              [Priority 3]
+------------------------------------------------------------------------------
+Status: NOT IMPLEMENTED
+Complexity: L (1–2 weeks)
+Depends on: C3 recommended (filter by sprint)
+
+Why:
+  Visual workflow by status; drag card to update status (boss request).
+
+Who / when:
+  Dev/PM on Tasks; columns = task_status values; cards = task rows.
+
+Definition of done:
+  - New view: /projects/[id]/tasks/board OR tab toggle Grid | Board
+  - Columns: Not started, In progress, In review, Done, Blocked, Need to be checked
+  - Drag-drop updates status via existing updateSheetRow path
+  - Card shows: code, title (JA/EN), assignee, deadline, overdue badge (C1)
+  - Respects RBAC (dev edits only editable columns)
+
+Red team:
+  - No drag if user cannot edit status
+  - Optimistic UI rollback on API failure
+
+Data model:
+  None if using task_rows.status
+
+Implementation steps:
+  1. KanbanBoard.tsx + @dnd-kit or HTML5 DnD
+  2. Fetch tasks (existing sheet data from page props)
+  3. onDrop → onUpdateRow(id, 'status', newStatus)
+  4. i18n column titles from data.ts status labels
+  5. Golden: move card, reload, status persisted
+
+Files to read:
+  src/app/.../projects/[id]/[tabId]/page.tsx, GenericSheet canEditCell for tasks
+
+------------------------------------------------------------------------------
+C5. Burn-down chart                           [Priority 4]
+------------------------------------------------------------------------------
+Status: NOT IMPLEMENTED
+Complexity: M–L (1 week)
+Depends on: C3 strongly recommended (sprint date range + scope)
+
+Why:
+  Track remaining work vs ideal burndown during a sprint.
+
+Who / when:
+  PM/sprint review; Y-axis = remaining person_days or task count; X-axis = days.
+
+Definition of done:
+  - Chart for selected sprint: ideal line + actual remaining work per day
+  - Scope: tasks linked to sprint; "remaining" excludes Done (define rule in comment)
+  - Data from task_rows (person_day, status, completed_date) — document formula
+  - EN/JA labels; empty state when no sprint selected
+
+Red team:
+  - Do not double-count tasks without person_day (show warning or default 1)
+
+Data model:
+  Optional: daily_snapshots table for historical accuracy (phase 2)
+
+Implementation steps:
+  1. burndown.ts pure functions: computeSeries(tasks, sprintStart, sprintEnd)
+  2. BurndownChartView.tsx (recharts or SVG like ScheduleChartView)
+  3. Entry: Sprint detail page or Tasks toolbar dropdown
+  4. Golden: 3 tasks, mid-sprint, verify math by hand
+
+Files to read:
+  src/components/ScheduleChartView.tsx (chart patterns), task_rows fields
+
+------------------------------------------------------------------------------
+C6. Gantt chart (full)                        [Priority 5]
+------------------------------------------------------------------------------
+Status: PARTIAL (ScheduleChartView = simple timeline)
+Complexity: L–XL (2–4 weeks)
+Depends on: C3 for sprint lanes optional
+
+Why:
+  Plan dependencies, milestones, drag to reschedule (beyond current schedule tab).
+
+Who / when:
+  PM planning; may replace/enhance master_schedule + schedule tab.
+
+Definition of done:
+  - Bars tied to start/end (deadline, person_day, or explicit start_date column)
+  - Zoom: week/month; today line (schedule already has today line)
+  - Drag bar end → updates deadline (PM only) via row update API
+  - Phase 2: dependency arrows between tasks (needs task_depends_on table)
+
+Red team:
+  - Timezone: use date-only fields consistently (rows.ts date parsing)
+
+Data model (phase 2):
+  task_rows.start_date; task_links (predecessor_id, successor_id)
+
+Implementation steps:
+  1. Extend ScheduleChartView OR new GanttChartView.tsx
+  2. Add start_date to tasks if missing (migration)
+  3. Pointer drag → PATCH deadline/start
+  4. MasterScheduleView: aggregate multi-project (later)
+
+Files to read:
+  ScheduleChartView.tsx, MasterScheduleView.tsx, data.ts schedule tab
+
+------------------------------------------------------------------------------
+C7. Synchronization with shared spreadsheets  [Priority 7]
+------------------------------------------------------------------------------
+Status: PARTIAL (import/export only; webhook NOT built)
+Complexity: XL (ongoing)
+Depends on: requirements-alignment-todo webhook item
+
+Why:
+  Teams live in Sheets; want near-real-time or scheduled sync into CyberConnect.
+
+Who / when:
+  PM/admin; service account or OAuth; per-project mapping config.
+
+Definition of done (MVP):
+  - Outbound: Export API already exists — document + cron optional
+  - Inbound: POST /api/webhooks/sheet-sync with shared secret (see requirements-alignment-todo.txt)
+  - Row upsert by task_code / screen_code via sanitizeRowData (src/server/rows.ts)
+  - Config UI: sheet URL, tab name, column map (reuse ColumnMappingUI concepts)
+
+Red team:
+  - Secret rotation; rate limits; never bypass RLS
+  - JA-only columns must not wipe EN (existing import rule)
+
+Implementation steps:
+  1. Webhook route + env SHEET_SYNC_SECRET
+  2. Google Apps Script sample in docs/ pushing rows as JSON
+  3. Idempotency key per row code
+  4. Audit log table sheet_sync_runs (optional)
+  5. Golden: one row update + one new row from webhook payload
+
+Files to read:
+  requirements-alignment-todo.txt, src/server/rows.ts finalizeImportRows, Import flow
+
+------------------------------------------------------------------------------
+C8. AI-based task suggestions                 [Priority 8]
+------------------------------------------------------------------------------
+Status: NOT IMPLEMENTED (DeepL used for translation, not task generation)
+Complexity: L (1–2 weeks for MVP)
+Depends on: none; richer with backlog + function_list context
+
+Why:
+  Suggest tasks from epic/function context; reduce PM manual entry.
+
+Who / when:
+  PM on Tasks or Backlog; button "Suggest tasks"; review before save.
+
+Definition of done:
+  - Server route calls LLM with structured context (epic, screen, function rows)
+  - Returns 3–10 proposed tasks (title EN/JA, person_day estimate, suggested status)
+  - User selects which to insert → create rows via addSheetRow
+  - Prompt + context documented; PII not sent (redact client names if needed)
+  - Feature flag or env OPENAI_API_KEY / existing AI provider
+
+Red team:
+  - Human must confirm before insert (no auto-write)
+  - Log failures; do not loop/spam API
+
+Data model:
+  None for MVP
+
+Implementation steps:
+  1. server/aiTaskSuggestions.ts — context builder from project sheets
+  2. POST /api/projects/[id]/ai/suggest-tasks
+  3. SuggestTasksModal.tsx
+  4. Evaluation doc: 20 golden epics → quality rubric (handbook §10.2)
+  5. Cost cap per request
+
+Files to read:
+  DeepL integration patterns in server, AddRowDrawer, bilingual fields
+
+------------------------------------------------------------------------------
+C9. Sales lead management                     [Priority 10]
+------------------------------------------------------------------------------
+Status: NOT IMPLEMENTED (projects have "client" string, not CRM pipeline)
+Complexity: XL (new domain)
+Depends on: none
+
+Why:
+  Track leads before they become projects; boss sales pipeline feature.
+
+Who / when:
+  Sales/admin; separate from project sheets or linked when won.
+
+Definition of done (MVP):
+  - Tables: leads (company, contact, stage, owner_profile_id, team_id, notes, next_action_date)
+  - Stages: New → Qualified → Proposal → Won → Lost
+  - UI: Leads list + kanban by stage under team workspace
+  - Won → optional "Create project" button prefilling client name
+
+Red team:
+  - RLS per team; GDPR-style delete lead
+
+Data model:
+  leads, lead_activities (new SQL file + RLS)
+
+Implementation steps:
+  1. Schema + RLS
+  2. CRUD API
+  3. LeadsView.tsx + routing under /[team_slug]/admin/leads
+  4. Golden: move stage, create project from won lead
+
+------------------------------------------------------------------------------
+C10. Billing, payment management              [Priority 9]
+------------------------------------------------------------------------------
+Status: PARTIAL (team owner, purchase-plan stub, UpgradeModal mock)
+Complexity: XL
+Depends on: none
+
+Why:
+  Monetize teams; invoices, plans, payment method (boss request).
+
+Who / when:
+  Billing owner; Stripe (or similar) checkout; webhooks for subscription state.
+
+Definition of done (MVP):
+  - Products/plans in Stripe; team.subscription_status, stripe_customer_id
+  - Checkout session from UpgradeModal (replace mock "type 29")
+  - Billing portal link for owner
+  - Webhook: invoice.paid, subscription.updated → update teams table
+  - Enforce seat/project limits by plan (optional phase 2)
+
+Red team:
+  - Never store raw card data; PCI via Stripe only
+  - Webhook signature verification
+
+Files to read:
+  src/app/api/teams/purchase-plan/route.ts, UpgradeModal.tsx, teams schema
+
+------------------------------------------------------------------------------
+C11. Accounting software integration          [Priority 11]
+------------------------------------------------------------------------------
+Status: NOT IMPLEMENTED
+Complexity: XL
+Depends on: C10 (invoices/payments exist to sync)
+
+Why:
+  Export revenue/expenses to 会計ソフト (Freee, Money Forward, QuickBooks, etc.).
+
+Who / when:
+  Billing owner / admin; OAuth to accounting SaaS; map invoice line items.
+
+Definition of done (MVP):
+  - One provider first (pick one: Freee OR Stripe→accounting export)
+  - OAuth connect per team; store refresh token encrypted
+  - Push: monthly CSV of invoices OR API create deal/invoice
+  - Disconnect + audit log
+
+Red team:
+  - Token encryption; revoke on team delete
+
+Implementation steps:
+  1. Choose provider; spike OAuth in sandbox
+  2. accounting_connections table
+  3. Settings UI + sync job
+  4. Document mapping in docs/ACCOUNTING_INTEGRATION.txt
+
+================================================================================
+PART E — TASK TEMPLATE (COPY INTO YOUR TASKS SHEET)
+================================================================================
+
+Task code: TSK-___
+Epic (EN): [Feature name from Part D — C1..C11]
+Priority: [1–11 from Part A]
+Epic (JA): [機能名]
+Task (EN): [One vertical slice, e.g. "Add overdue row styling on Tasks grid"]
+Task (JA): [具体的な1スライス]
+
+Acceptance criteria:
+  1.
+  2.
+  3.
+
+Red team (must NOT happen):
+  -
+
+Files likely touched:
+  -
+
+Golden examples:
+  -
+
+================================================================================
+PART F — QUICK REFERENCE: REPO COMMANDS
+================================================================================
+
+  npm run dev          Local app
+  database/*.sql       Schema + RLS source of truth
+  README.md            Product overview
+
+When stuck:
+  - Read handbook: context design = WHAT you pass to AI + business rules
+  - Ask: "How is this used in JP delivery projects?" before guessing schema
+  - Prefer extending sheetTabs + GenericSheet over one-off pages unless UX demands
+
+================================================================================
+PART G — JIRA PARITY GAP (QA VIEW)
+================================================================================
+
+Purpose:
+  Assume Part A priorities 1–11 (roadmap features) are FULLY implemented.
+  This section lists what is STILL missing to be "industry standard like Jira"
+  — and what CyberConnect is already stronger at.
+
+Two different "done" bars (use in reviews):
+  [Delivery tool]  JP/EN PM runs requirements + tasks + tests + schedule in one
+                   project better than Jira + Excel → roadmap + polish ≈ close.
+  [Jira replacement] 50-person org drops Jira entirely → gaps below remain;
+                   treat as a multi-wave program AFTER Part A.
+
+--------------------------------------------------------------------------------
+G0. AFTER ROADMAP — WHAT YOU WOULD HAVE (SUMMARY)
+--------------------------------------------------------------------------------
+
+  Strong:
+    - Task grid + Kanban + overdue styling + sprints + burndown + Gantt slice
+    - Bilingual sheets (purpose, screens, functions, tasks, tests, APIs, backlog)
+    - Import/export, column layouts, resize, DeepL, team/project RBAC + RLS
+    - Billing/leads/accounting starters (not Jira core)
+
+  Weak vs Jira:
+    - No universal "issue" product with workflow engine and marketplace
+    - No cross-project JQL, dashboards, automation rules, notification fabric
+    - No enterprise SSO/audit/compliance product story at Atlassian scale
+
+--------------------------------------------------------------------------------
+G1. ISSUE MODEL & HIERARCHY (HIGH GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Issue types (Story, Bug, Sub-task) with different fields/screens per type
+    - Parent/child hierarchy + link types (blocks, duplicates, relates, epic link)
+    - Sub-tasks with rolled-up remaining work
+    - Move/clone issue across projects with field mapping
+    - Cross-project issue search by key
+
+  CyberConnect today:
+    - Sheet rows + codes (task_code, screen_code, etc.), epic as columns not a graph
+
+  Future wave (if pursuing parity): "Work item hub" — work_items table + links table
+
+--------------------------------------------------------------------------------
+G2. WORKFLOW ENGINE (HIGH GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Custom workflows: states, transitions, conditions, validators
+    - Post-functions (auto-assign, webhooks on transition)
+    - Per-project / per-issue-type workflow schemes
+
+  CyberConnect today:
+    - Fixed status enums on sheet rows; no admin-configurable state machine
+
+  Future wave: workflow_definitions + transition_permissions (admin UI)
+
+--------------------------------------------------------------------------------
+G3. PERMISSIONS & GOVERNANCE (HIGH FOR ENTERPRISE)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Permission schemes (browse/create/edit/transition/delete/administer)
+    - Issue-level and field-level security
+    - Admin audit log (who changed workflow, scheme, project config)
+    - SSO/SAML/OIDC, SCIM, org policies, compliance packaging (SOC2, DPA, residency)
+
+  CyberConnect today:
+    - team/project RBAC, RLS on rows — good for single-tenant team model, not Jira schemes
+
+  Future wave: permission_scheme per project; config_audit_log table
+
+--------------------------------------------------------------------------------
+G4. SEARCH, FILTERS, DASHBOARDS (HIGH GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - JQL-like query across projects and fields
+    - Saved filters, subscriptions, shared filters
+    - Personal dashboards + gadgets (assigned to me, sprint health, etc.)
+    - @mentions, watchers, rich comment thread per issue
+    - Attachments with preview on the work item
+
+  CyberConnect today:
+    - One tab grid per sheet; sort/filter in UI only, no global issue index
+
+  Future wave: saved_filters + global_search API; comments/attachments on work_items
+
+--------------------------------------------------------------------------------
+G5. AGILE MECHANICS BEYOND ROADMAP (MEDIUM–HIGH GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira (even after burndown + Kanban + sprints):
+    - Backlog rank (drag order independent of sheet row order)
+    - Sprint planning: capacity, commitment, complete sprint, spillover handling
+    - Kanban WIP limits, swimlanes (assignee, epic, priority)
+    - Reports: velocity, control chart, cumulative flow, sprint report, release burndown
+    - Story points as first-class metric (vs person_day only)
+    - Fix version / affects version tied to releases
+
+  Future wave: backlog_rank column; report/* endpoints; WIP on board config
+
+--------------------------------------------------------------------------------
+G6. PORTFOLIO & PROGRAM MANAGEMENT (HIGH FOR MULTI-TEAM)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Cross-project roadmaps and epic timelines
+    - Dependency graph and critical path across teams
+    - Capacity allocation across people/teams
+    - Scenario / what-if planning
+
+  CyberConnect today:
+    - Per-project schedule tab; master_schedule placeholder — not Advanced Roadmaps
+
+  Future wave: program entity linking multiple projects; dependency_links table
+
+--------------------------------------------------------------------------------
+G7. NOTIFICATIONS & COLLABORATION (HIGH GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Email + in-app notifications (assigned, mentioned, status, due soon)
+    - Per-user notification preferences
+    - Slack / Microsoft Teams integrations
+    - Deep link issue ↔ doc (Confluence-style); activity feed per item
+
+  Future wave: notification_events + user_notification_settings + email provider
+
+--------------------------------------------------------------------------------
+G8. AUTOMATION & INTEGRATIONS (VERY HIGH GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Rule builder (when field X → action Y)
+    - Full admin REST surface for all config objects
+    - Outbound webhooks on every relevant event (not only inbound sheet sync)
+    - Marketplace / app ecosystem (GitHub PR, test tools, etc.)
+    - CI/CD: deployments visible on work items, release boards
+
+  CyberConnect today:
+    - Inbound sheet sync (planned C7); GitHub/Slack not productized
+
+  Future wave: automation_rules table; outbound_webhooks; github_integration MVP
+
+--------------------------------------------------------------------------------
+G9. TIME TRACKING & ESTIMATION (MEDIUM GAP)
+--------------------------------------------------------------------------------
+
+  Missing vs Jira:
+    - Worklogs per issue, timesheets, approval
+    - Original estimate / remaining / spent roll-ups
+    - Billable hours from worklogs (different from team Stripe billing)
+
+  CyberConnect today:
+    - person_day on task rows — useful but not Tempo-class tracking
+
+  Future wave: work_logs table linked to task_rows or work_items
+
+--------------------------------------------------------------------------------
+G10. NON-FUNCTIONAL / QA BAR (ENTERPRISE PROCUREMENT)
+--------------------------------------------------------------------------------
+
+  | Area              | Jira Cloud expectation     | Gap if claiming "like Jira"      |
+  |-------------------|----------------------------|----------------------------------|
+  | Scale             | Huge issue count, fast JQL | Indexing, load tests, pagination |
+  | SLA / status      | Published uptime           | Status page, incident process    |
+  | Mobile            | Native apps                | Responsive web only              |
+  | Migration         | Jira import tools          | CSV import ≠ full Jira migration   |
+  | Config backup     | Export project config      | Export workflows/schemes         |
+  | Data residency    | Region choice              | Supabase region strategy         |
+
+--------------------------------------------------------------------------------
+G11. OUT OF SCOPE UNLESS PRODUCT EXPANDS
+--------------------------------------------------------------------------------
+
+  Not Jira Software core (separate Atlassian lines):
+    - Jira Service Management (queues, SLAs, customer portal)
+    - Assets / CMDB
+    - Org-wide Goals / OKRs
+    - Full test management (cycles, executions) — you have test case rows, not Zephyr
+
+--------------------------------------------------------------------------------
+G12. WHERE CYBERCONNECT IS AHEAD OF DEFAULT JIRA
+--------------------------------------------------------------------------------
+
+  Use in positioning — do not throw away differentiators:
+    - Integrated delivery sheets: purpose, tech, NFR, screens, functions, tasks,
+      tests, APIs, backlog in one bilingual project
+    - Spreadsheet-native UX + import/export + column layouts
+    - EN/JA field pairs + DeepL on save/import
+    - Client remark columns and delivery-specific statuses (dev/client completion)
+
+--------------------------------------------------------------------------------
+G13. SUGGESTED WAVES AFTER PART A (FOR FUTURE TICKETS)
+--------------------------------------------------------------------------------
+
+  Not numbered in Part A — use when boss asks "what after billing/accounting?"
+
+  Wave W1 — Work item hub
+    Comments, attachments, watchers, per-item history (not only grid cells)
+
+  Wave W2 — Workflow admin
+    Per-project statuses/transitions + role permissions on transition
+
+  Wave W3 — Notifications
+    Event types, in-app inbox, email, preferences
+
+  Wave W4 — Search & filters
+    JQL-lite, saved filters, cross-project task search
+
+  Wave W5 — Agile pack
+    Velocity/CFD, sprint complete, WIP limits, backlog rank
+
+  Wave W6 — Integrations
+    GitHub/GitLab PR ↔ task, outbound webhooks, Slack notify
+
+  Wave W7 — Enterprise
+    SAML, admin audit log, scale hardening, migration tooling
+
+  Each wave = many Tasks-sheet tickets (same template as Part E).
+
+--------------------------------------------------------------------------------
+G14. ONE-LINE QA SIGN-OFF (COPY FOR REVIEWS)
+--------------------------------------------------------------------------------
+
+  After roadmap (Part A): CyberConnect meets industry standard for bilingual,
+  sheet-centric software DELIVERY. It does NOT meet industry standard as a full
+  Jira REPLACEMENT until G1–G8 (especially workflow, search, notifications,
+  automation, enterprise governance) are addressed in Waves W1–W7.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

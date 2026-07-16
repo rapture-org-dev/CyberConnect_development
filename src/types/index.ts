@@ -101,6 +101,9 @@ export interface Project {
   workspace_type: AccountKind;
   owner_id: string | null;
   created_at: string;
+  /** GitHub Issues target (empty = fall back to GITHUB_OWNER / GITHUB_REPO env). */
+  github_owner?: string;
+  github_repo?: string;
 }
 
 export interface ExportOptions {

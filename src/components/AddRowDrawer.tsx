@@ -19,7 +19,14 @@ import {
   isMirroredBilingualField,
 } from '@/lib/bilingualFields';
 import { BilingualFieldPairEditor } from '@/components/BilingualFieldPairEditor';
+import {
+  TaskGitHubIssuePanel,
+  type GitHubComposeIntent,
+} from '@/components/TaskGitHubIssuePanel';
 import { shouldRenderMergedBilingualBlock } from '@/lib/data';
+import { taskGitHubIssueAction } from '@/lib/api/client';
+import { useWorkspace } from '@/components/WorkspaceProvider';
+import { formatGitHubOwnerRepo } from '@/lib/githubRepo';
 
 interface Props {
   tab: SheetTab;
@@ -32,7 +39,8 @@ interface Props {
   /** Registered function IDs (`function_list.function_code`) for task pickers */
   functionCodeOptions?: string[];
   onClose: () => void;
-  onSave: (row: SheetRow) => void | Promise<void>;
+  /** Must return the saved row so GitHub create/link can run after insert. */
+  onSave: (row: SheetRow) => void | Promise<void | SheetRow>;
 }
 
 export function AddRowDrawer({
@@ -46,6 +54,7 @@ export function AddRowDrawer({
   onClose,
   onSave,
 }: Props) {
+  const { applySheetRowLocal } = useWorkspace();
   const [formData, setFormData] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     tab.columns.forEach((c) => {
@@ -83,6 +92,11 @@ export function AddRowDrawer({
   const [taskCodeError, setTaskCodeError] = useState<string | null>(null);
   const [savePending, setSavePending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [githubIntent, setGithubIntent] = useState<GitHubComposeIntent>('none');
+  const [githubIssueInput, setGithubIssueInput] = useState('');
+
+  const canLinkGitHub =
+    isTasksTab(tab.id) && (projectSheetRole === 'pm' || projectSheetRole === 'dev');
 
   useEffect(() => {
     if (!isTasksTab(tab.id)) return;
@@ -126,6 +140,14 @@ export function AddRowDrawer({
     e.preventDefault();
     if (savePending) return;
     if (isTasksTab(tab.id) && taskCodeLoading) return;
+    if (githubIntent === 'link' && !githubIssueInput.trim()) {
+      setSaveError(
+        language === 'ja'
+          ? 'Issue をリンクする場合は URL または番号を入力してください。'
+          : 'Enter an issue URL or number to link after save.'
+      );
+      return;
+    }
     setSaveError(null);
     setSavePending(true);
     const newRow = {
@@ -135,7 +157,31 @@ export function AddRowDrawer({
       created_at: new Date().toISOString(),
     } as SheetRow;
     try {
-      await onSave(newRow);
+      const saved = (await onSave(newRow)) as SheetRow | void;
+      const savedRow = saved && typeof saved === 'object' && 'id' in saved ? saved : newRow;
+
+      if (canLinkGitHub && githubIntent !== 'none' && savedRow.id) {
+        try {
+          const result = await taskGitHubIssueAction(
+            projectId,
+            savedRow.id,
+            githubIntent === 'create' ? 'create' : 'link',
+            githubIntent === 'link' ? githubIssueInput : undefined
+          );
+          applySheetRowLocal(projectId, tab.id, result.row);
+        } catch (ghErr) {
+          const ghMsg = ghErr instanceof Error ? ghErr.message : '';
+          setSaveError(
+            language === 'ja'
+              ? `タスクは保存されましたが、GitHub 連携に失敗しました: ${ghMsg || '不明なエラー'}`
+              : `Task saved, but GitHub link failed: ${ghMsg || 'Unknown error'}`
+          );
+          setSavePending(false);
+          return;
+        }
+      }
+
+      onClose();
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
       if (msg === 'duplicate_task_code') {
@@ -297,6 +343,19 @@ export function AddRowDrawer({
             </div>
           )}
           <div className="overflow-y-auto p-5 custom-scrollbar space-y-4">
+            {isTasksTab(tab.id) ? (
+              <TaskGitHubIssuePanel
+                projectId={projectId}
+                language={language}
+                canLink={canLinkGitHub}
+                repoLabel={formatGitHubOwnerRepo(project?.github_owner, project?.github_repo) || undefined}
+                compose
+                composeIntent={githubIntent}
+                onComposeIntentChange={setGithubIntent}
+                composeIssueInput={githubIssueInput}
+                onComposeIssueInputChange={setGithubIssueInput}
+              />
+            ) : null}
             {fieldSpecs.map(({ col, jaKey }) => {
               const showDual =
                 jaKey &&

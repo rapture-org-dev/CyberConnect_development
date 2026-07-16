@@ -14,6 +14,7 @@ export function NewProjectModal({ onClose, onAdd, workspaceType = 'team' }: Prop
   const [nameJa, setNameJa] = useState('');
   const [client, setClient] = useState('');
   const [desc, setDesc] = useState('');
+  const [githubFull, setGithubFull] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +28,8 @@ export function NewProjectModal({ onClose, onAdd, workspaceType = 'team' }: Prop
         client: client.trim() || (workspaceType === 'personal' ? 'Personal' : 'TBD'),
         description: desc.trim(),
         workspace_type: workspaceType,
-      });
+        github_full: githubFull.trim(),
+      } as Partial<Project> & { github_full?: string });
       onClose();
     } catch (err: any) {
       alert(err.message || 'Failed to create project.');
@@ -90,6 +92,19 @@ export function NewProjectModal({ onClose, onAdd, workspaceType = 'team' }: Prop
               rows={3}
               className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500/40 resize-none" 
             />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 mb-1.5 block">GitHub repository (optional)</label>
+            <input
+              value={githubFull}
+              onChange={(e) => setGithubFull(e.target.value)}
+              placeholder="owner/repo e.g. rapture-org-dev/MyApp"
+              className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Used for Tasks ↔ GitHub Issues. Leave empty to use the app default repo from env.
+            </p>
           </div>
 
           <button type="submit" disabled={!name.trim() || isCreating}

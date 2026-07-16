@@ -55,6 +55,8 @@ interface WorkspaceContextType {
   refreshProject: (id: string) => Promise<Project | null>;
   updateSheetRow: (projectId: string, tabId: string, rowId: string, key: string, value: string) => Promise<void>;
   updateSheetRowData: (projectId: string, tabId: string, updatedRow: SheetRow) => Promise<void>;
+  /** Patch client sheet cache without another API write (e.g. after GitHub link API already saved). */
+  applySheetRowLocal: (projectId: string, tabId: string, updatedRow: SheetRow) => void;
   addSheetRow: (projectId: string, tabId: string, newRow: SheetRow) => Promise<SheetRow>;
   deleteSheetRow: (projectId: string, tabId: string, rowId: string) => Promise<void>;
   deleteSheetRows: (projectId: string, tabId: string, rowIds: string[]) => Promise<void>;
@@ -709,6 +711,18 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     }));
   }, [flushPendingSheetWrites]);
 
+  const applySheetRowLocal = useCallback((projectId: string, tabId: string, updatedRow: SheetRow) => {
+    setSheetData((prev) => ({
+      ...prev,
+      [projectId]: {
+        ...prev[projectId],
+        [tabId]: (prev[projectId]?.[tabId] ?? []).map((r) =>
+          r.id === updatedRow.id ? updatedRow : r
+        ),
+      },
+    }));
+  }, []);
+
   const addSheetRow = useCallback(async (projectId: string, tabId: string, newRow: SheetRow) => {
     await flushPendingSheetWrites();
     const created = await upsertSheetRowAction(tabId, { ...newRow, project_id: projectId });
@@ -820,6 +834,7 @@ export function WorkspaceProvider({ children, initialProjects }: { children: Rea
     refreshProject,
     updateSheetRow,
     updateSheetRowData,
+    applySheetRowLocal,
     addSheetRow,
     deleteSheetRow,
     deleteSheetRows,

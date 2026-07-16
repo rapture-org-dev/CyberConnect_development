@@ -14,6 +14,7 @@ import { mergeExtrasIntoSheetRow } from '@/lib/sheetRows'
 import { applyMirroredBilingualFields } from '@/lib/bilingualFields'
 import { applyBilingualAutoTranslateBatch } from '@/server/bilingualAutoTranslate'
 import { resolveImportFieldKey } from '@/lib/data'
+import { maybeAutoPushGitHubIssueAfterTaskSave } from '@/server/github/autoPush'
 
 /**
  * Server-side actions for managing Sheet Rows across all tables.
@@ -831,12 +832,18 @@ export async function upsertSheetRowAction(tabId: string, row: Partial<SheetRow>
         ...payload,
         project_id: row.project_id,
       } as Record<string, unknown>)
-      if (tabId === 'tasks') return shapeTaskRowForClient(fallback as SheetRow)
+      if (tabId === 'tasks') {
+        const shaped = shapeTaskRowForClient(fallback as SheetRow)
+        return maybeAutoPushGitHubIssueAfterTaskSave(supabase, shaped)
+      }
       return fallback as SheetRow
     }
 
     const saved = data as SheetRow
-    if (tabId === 'tasks') return shapeTaskRowForClient(saved)
+    if (tabId === 'tasks') {
+      const shaped = shapeTaskRowForClient(mergeExtrasIntoSheetRow(saved as unknown as Record<string, unknown>))
+      return maybeAutoPushGitHubIssueAfterTaskSave(supabase, shaped)
+    }
     return saved
   } catch (e) {
     if (e instanceof Error) {

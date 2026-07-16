@@ -1,0 +1,98 @@
+GitHub Issues ↔ CyberConnect Tasks
+================================================================================
+
+MVP + Phase 2 (light two-way sync)
+
+--------------------------------------------------------------------------------
+MVP
+--------------------------------------------------------------------------------
+  - Tasks detail + Add New: Create / Link / Unlink GitHub Issue
+  - Fields in task_rows.extras:
+      github_issue_number, github_issue_url, github_issue_state,
+      github_issue_owner, github_issue_repo  (repo of the linked issue; may differ from project default)
+
+--------------------------------------------------------------------------------
+Phase 2 — sync rules
+--------------------------------------------------------------------------------
+  Inbound (GitHub → CyberConnect) via webhook OR Refresh button:
+    - closed  → github_issue_state=closed, status=Done, set completed_date if empty
+    - reopened/open → github_issue_state=open; if status was Done → In progress
+
+  Outbound (CyberConnect → GitHub) via Push status button:
+    - task status Done → close issue
+    - any other status → reopen issue
+
+  Conflict rule: GitHub wins for issue open/closed when refreshing/webhook;
+  Push status explicitly sends CyberConnect status to GitHub.
+
+--------------------------------------------------------------------------------
+Env (.env.local / Vercel)
+--------------------------------------------------------------------------------
+  GITHUB_ISSUES_TOKEN=
+  GITHUB_OWNER=rapture-org-dev
+  GITHUB_REPO=CyberConnect_development
+  GITHUB_WEBHOOK_SECRET=          # random string; same as GitHub webhook secret
+  SUPABASE_SERVICE_ROLE_KEY=      # required for webhook DB updates (server only)
+
+--------------------------------------------------------------------------------
+GitHub webhook setup
+--------------------------------------------------------------------------------
+  1. Repo → Settings → Webhooks → Add webhook
+  2. Payload URL:
+       https://<your-host>/api/webhooks/github
+  3. Content type: application/json
+  4. Secret: same as GITHUB_WEBHOOK_SECRET
+  5. Events: Issues (opened, edited, closed, reopened) — or "Just the issues event"
+  6. Redeploy after setting env vars
+
+--------------------------------------------------------------------------------
+API
+--------------------------------------------------------------------------------
+  POST /api/sheet-rows/github-issue
+    action: create | link | unlink | refresh | push-status
+
+  POST /api/webhooks/github
+    GitHub Issues events (signature required)
+
+--------------------------------------------------------------------------------
+UI
+--------------------------------------------------------------------------------
+  Task detail (linked): Refresh | Push status | Unlink | open #N
+  Task detail / Add New (unlinked): issue dropdown from project default repo
+    + paste URL for any other repo; then Link / save
+
+--------------------------------------------------------------------------------
+Per-project GitHub repository (Create / bare #n / dropdown)
+--------------------------------------------------------------------------------
+  projects.github_owner / projects.github_repo (optional)
+  - Set on New Project or Edit Project as owner/repo
+  - Empty → fall back to GITHUB_OWNER / GITHUB_REPO env
+  - Migration: database/migrate_add_project_github_repo.sql
+  - PAT must have Issues access on each repo you create/link against
+  - Link dropdown lists open issues from this default repo
+    GET /api/projects/github-issues?projectId=...&state=open
+
+Link rules
+--------------------------------------------------------------------------------
+  - Full issue URL → any GitHub repo (stores owner/repo on the task)
+  - Bare #123 / 123 → project default repo (or env); error if neither is set
+  - Create always uses project/env default repo
+  - Refresh / Push / auto-push / webhook use the linked issue’s owner/repo
+
+Auto-push on status save: ENABLED
+  When a linked task is saved and status maps to a different GitHub open/closed
+  state, CyberConnect PATCHes the linked issue (Done→closed, else→open). Failures
+  are logged and do not block the task save.
+
+Webhook
+--------------------------------------------------------------------------------
+  Matches tasks by linked issue number + owner/repo (from URL or stored fields),
+  not only projects whose default repo equals the webhook repository.
+  Still configure a webhook on each GitHub repo whose issues you want inbound.
+
+--------------------------------------------------------------------------------
+Not included yet
+--------------------------------------------------------------------------------
+  - Comments / assignees / labels sync
+  - Multi-repo OAuth / GitHub App install flow
+  - Per-project personal access tokens (uses shared GITHUB_ISSUES_TOKEN)

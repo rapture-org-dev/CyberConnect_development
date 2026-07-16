@@ -289,6 +289,40 @@ export async function upsertSheetRowAction(
   })
 }
 
+export async function taskGitHubIssueAction(
+  projectId: string,
+  rowId: string,
+  action: 'create' | 'link' | 'unlink' | 'refresh' | 'push-status',
+  issueUrl?: string
+): Promise<{
+  row: SheetRow
+  issue?: { number: number; htmlUrl: string; state: string }
+  created?: boolean
+}> {
+  return apiFetch('/api/sheet-rows/github-issue', {
+    method: 'POST',
+    body: JSON.stringify({ projectId, rowId, action, issueUrl }),
+  })
+}
+
+export type ProjectGitHubIssueOption = {
+  number: number
+  title: string
+  htmlUrl: string
+  state: 'open' | 'closed'
+}
+
+export async function listProjectGitHubIssuesAction(
+  projectId: string,
+  state: 'open' | 'closed' | 'all' = 'open'
+): Promise<{
+  repo: { owner: string; repo: string }
+  issues: ProjectGitHubIssueOption[]
+}> {
+  const q = new URLSearchParams({ projectId, state })
+  return apiFetch(`/api/projects/github-issues?${q.toString()}`)
+}
+
 export async function translateBilingualFieldAction(
   tabId: string,
   enKey: string,

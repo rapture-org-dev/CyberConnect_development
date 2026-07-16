@@ -198,8 +198,8 @@ export default function PersonalProjectTabPage() {
             functionCodeOptions={registeredFunctionCodes}
             onClose={() => setShowAddRow(false)}
             onSave={async (newRow) => {
-              await addSheetRow(projectId, resolvedTabId, newRow);
-              setShowAddRow(false);
+              const saved = await addSheetRow(projectId, resolvedTabId, newRow);
+              return saved;
             }}
           />
         )}

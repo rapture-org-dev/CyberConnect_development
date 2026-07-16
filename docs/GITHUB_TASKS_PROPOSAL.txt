@@ -1,0 +1,177 @@
+================================================================================
+PROPOSAL: GitHub Issues ↔ CyberConnect Tasks
+Date: 2026-07-16
+Status: MVP + light two-way sync implemented (local/staging-ready)
+Audience: Product / engineering review (rapture-org-dev)
+================================================================================
+
+目的（要約）
+--------------------------------------------------------------------------------
+rapture-org-dev には多数の GitHub リポジトリがあり、CyberConnect には多数の
+プロジェクトがある。目標は「任意のリポジトリの Issue を、任意のプロジェクトの
+タスクに紐付け、状態（open/closed ↔ タスク Status）を行き来できる」こと。
+
+本日までに MVP を実装済み。以下に「できたこと」と「提案する改善」を整理する。
+
+
+--------------------------------------------------------------------------------
+1. GOAL (boss scenario)
+--------------------------------------------------------------------------------
+  Many GitHub repos (rapture-org-dev)  ×  many CyberConnect projects
+
+  Desired:
+    - Link any issue from any org repo → a specific task in a specific project
+    - From the app: create / link / open-close that issue
+    - Keep task status and issue open/closed roughly in sync
+
+  Not required for MVP:
+    - One CyberConnect project = only one GitHub repo (too rigid)
+    - Per-user GitHub login (shared bot/token is OK for v1)
+
+
+--------------------------------------------------------------------------------
+2. WHAT IS DONE TODAY
+--------------------------------------------------------------------------------
+
+2.1 Link model (many-to-many friendly)
+  - Each task can store a linked GitHub issue in task extras:
+      github_issue_number, github_issue_url, github_issue_state,
+      github_issue_owner, github_issue_repo
+  - Link with a FULL issue URL works for ANY repo the token can access
+    (not limited to the project’s default repo).
+  - So: Project A task ↔ repo X issue #12, Project B task ↔ repo Y issue #3
+    is already supported.
+
+2.2 Create / Link / Unlink UI
+  - Task detail sidebar: Create | Link | Unlink | Refresh | Push status
+  - Link dropdown: open issues from the project's default GitHub repo
+  - Add New task: optional “create or link after save” (same dropdown)
+  - New / Edit Project: optional default GitHub repo field (owner/repo)
+  - Create + bare #123 use project default repo, else env GITHUB_OWNER/REPO
+  - Paste full URL still works for any other accessible repo
+
+2.3 Sync rules (light two-way)
+  GitHub → CyberConnect (Refresh or webhook):
+    - Issue closed  → task status Done (+ completed_date if empty)
+    - Issue reopened → if task was Done → In progress
+
+  CyberConnect → GitHub (Push status, or auto on save):
+    - Status Done → close issue
+    - Any other status → reopen issue
+
+2.4 Server / ops foundations
+  - Shared PAT: GITHUB_ISSUES_TOKEN (one token for the whole app)
+  - API: POST /api/sheet-rows/github-issue
+  - Webhook: POST /api/webhooks/github (HMAC secret)
+  - Webhook matching uses the linked issue’s owner/repo (cross-repo OK)
+  - Who can use it: PM, developers, team admins (not clients)
+
+2.5 What works without webhook
+  - Create, Link, Unlink, Push status, Refresh, auto-push on save
+  - Good enough for local testing and day-to-day use
+  - Webhook only adds “auto update when someone closes on GitHub”
+
+
+--------------------------------------------------------------------------------
+3. CURRENT LIMITATIONS (honest)
+--------------------------------------------------------------------------------
+  A. Create new issue
+     Only targets the project default repo (or env default), not “pick any
+     org repo” in the Create button.
+
+  B. Finding issues
+     Dropdown lists open issues from the project's default repo (implemented).
+     For other repos, paste a full issue URL. No org-wide multi-repo browser yet.
+
+  C. Webhooks
+     - One shared SECRET in env (good).
+     - But each GitHub REPO still needs its own webhook registration
+       (same URL + same secret). Not automatic for the whole org yet.
+     - Localhost needs a tunnel (ngrok) for webhook testing.
+
+  D. Identity
+     Issues created by the app appear as the PAT owner, not each CyberConnect
+     user’s personal GitHub account.
+
+  E. Scope of sync
+     Only open/closed ↔ task status (Done / reopen).
+     No comments, assignees, labels, or PR linking yet.
+
+
+--------------------------------------------------------------------------------
+4. PROPOSED IMPROVEMENTS (prioritized)
+--------------------------------------------------------------------------------
+
+P0 — Finish rollout of what we have (ops, not new code)
+  - Set GITHUB_ISSUES_TOKEN on staging/production (Vercel)
+  - Run DB migration for projects.github_owner / github_repo if not applied
+  - Document for the team: Link = paste URL + click Link (not Save Changes)
+  - Optionally add webhooks on the main repos that need auto inbound sync
+  - Effort: low (ops / docs)
+
+P1 — Create into any repo (match Link flexibility)
+  - On Create: choose owner/repo (or paste repo) before creating the issue
+  - Still keep project default as a convenience shortcut
+  - Effort: small–medium
+  - Impact: Create matches the “any org repo ↔ any project” story
+
+P2 — Org-wide inbound webhook (less manual repo setup)
+  Option A: GitHub Organization webhook → same /api/webhooks/github
+  Option B: GitHub App installed on rapture-org-dev (recommended long-term)
+  - Effort: medium (ops + possibly small code for App auth)
+  - Impact: new repos get auto sync without per-repo webhook clicks
+
+P3 — Issue picker / search in UI
+  - DONE (partial): dropdown of open issues from project default repo
+  - Still open: search across multiple org repos / closed issues filter UI
+  - Effort remaining: medium
+  - Impact: better UX without pasting URLs for the default repo
+
+P4 — Richer sync (later)
+  - Assignees, labels, comments (one direction first)
+  - Optional: show linked PR status on the task
+  - Effort: large
+  - Impact: closer to Jira/GitHub Projects parity
+
+P5 — Per-user GitHub identity (later)
+  - OAuth / GitHub App user tokens so creates appear as the real author
+  - Effort: large
+  - Impact: audit clarity; not required for MVP value
+
+
+--------------------------------------------------------------------------------
+5. RECOMMENDED NEXT STEP FOR THE TEAM
+--------------------------------------------------------------------------------
+  1) Accept today’s MVP as the baseline for the boss scenario (Link any issue
+     URL from any accessible org repo to any project task + status sync).
+  2) Roll out env + short team howto on staging.
+  3) Decide with boss which improvement to schedule first:
+       - If “create anywhere” matters → P1
+       - If “auto close without Refresh” for all repos → P2
+       - If “don’t paste URLs” matters → P3
+
+  Suggested order if building further:  P0 → P1 → P2 → P3
+
+
+--------------------------------------------------------------------------------
+6. HOW TO DEMO (5 minutes)
+--------------------------------------------------------------------------------
+  1. Open a task → Link with a full issue URL from any rapture-org-dev repo
+  2. Set status Done → Save or Push status → issue closes on GitHub
+  3. Click Refresh after reopening on GitHub → task leaves Done
+  4. Unlink → Link another issue from a different repo
+  5. (Optional) Show Edit Project default owner/repo for Create / #123
+
+
+--------------------------------------------------------------------------------
+7. DECISION ASK
+--------------------------------------------------------------------------------
+  Please confirm:
+  [ ] MVP scope is acceptable for now (Link-by-URL + status sync)
+  [ ] Priority for next improvement: P1 / P2 / P3 / other
+  [ ] Staging rollout this week: Yes / No
+
+
+================================================================================
+End of proposal
+================================================================================

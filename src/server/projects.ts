@@ -9,12 +9,17 @@ import {
   canUpdateTeamProjectMetadata,
   canDeleteTeamProject,
 } from '@/lib/team-project-auth'
+import { normalizeProjectGitHubFields } from '@/lib/githubRepo'
 
 export type TeamProjectCoreDetailsInput = {
   name: string;
   name_ja: string;
   client: string;
   description: string;
+  /** Optional `owner/repo` or leave empty to use env defaults. */
+  github_full?: string;
+  github_owner?: string;
+  github_repo?: string;
 }
 
 /**
@@ -299,6 +304,8 @@ export async function createProjectAction(project: Partial<Project>): Promise<{ 
 
     // Clean up UI-only or temp fields
     delete payload.assignedDevIds
+    delete payload.projectMemberEntries
+    delete payload.nameJa
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     if (payload.id && !uuidRegex.test(String(payload.id))) delete payload.id
     
@@ -308,6 +315,19 @@ export async function createProjectAction(project: Partial<Project>): Promise<{ 
         payload[f] = null
       }
     })
+
+    try {
+      const gh = normalizeProjectGitHubFields({
+        github_full: (project as { github_full?: string }).github_full,
+        github_owner: project.github_owner,
+        github_repo: project.github_repo,
+      })
+      payload.github_owner = gh.github_owner
+      payload.github_repo = gh.github_repo
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : 'Invalid GitHub repository' }
+    }
+    delete payload.github_full
 
     const { data, error } = await supabase
       .from('projects')
@@ -365,9 +385,29 @@ export async function updateProjectAction(id: string, updates: Partial<Project>)
     }
   }
 
+  const payload: Record<string, unknown> = { ...updates }
+  delete payload.assignedDevIds
+  delete payload.projectMemberEntries
+  delete payload.nameJa
+
+  if (
+    'github_owner' in payload ||
+    'github_repo' in payload ||
+    'github_full' in payload
+  ) {
+    const gh = normalizeProjectGitHubFields({
+      github_full: payload.github_full as string | undefined,
+      github_owner: payload.github_owner as string | undefined,
+      github_repo: payload.github_repo as string | undefined,
+    })
+    payload.github_owner = gh.github_owner
+    payload.github_repo = gh.github_repo
+    delete payload.github_full
+  }
+
   const { error } = await supabase
     .from('projects')
-    .update(updates)
+    .update(payload)
     .eq('id', id)
 
   if (error) throw error
@@ -411,11 +451,23 @@ export async function updateTeamProjectCoreDetailsAction(
     return { success: false, error: 'Forbidden: Only a company admin or the billing owner can edit project details' }
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     name,
     name_ja: input.name_ja.trim() || name,
     client: input.client.trim(),
     description: input.description.trim(),
+  }
+
+  try {
+    const gh = normalizeProjectGitHubFields({
+      github_full: input.github_full,
+      github_owner: input.github_owner,
+      github_repo: input.github_repo,
+    })
+    payload.github_owner = gh.github_owner
+    payload.github_repo = gh.github_repo
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Invalid GitHub repository' }
   }
 
   const { data: updated, error } = await supabase
